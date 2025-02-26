@@ -1,0 +1,25 @@
+# Don't print a new line at the start of the prompt
+add_newline = false
+
+# Make prompt a single line
+[line_break]
+disabled = false
+
+# Replace the "❯" symbol
+[character]
+success_symbol = "[→](bold green)"
+error_symbol = "[✗](bold red)"
+
+# Disable the package module
+[package]
+disabled = true
+
+[git_branch]
+format = "[$branch]($style) "
+
+[git_status]
+format = '([\[$all_status$ahead_behind\]]($style) )'
+
+[directory]
+truncation_length = 3
+truncation_symbol = "…/"

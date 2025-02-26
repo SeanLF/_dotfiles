@@ -1,0 +1,24 @@
+{
+  "recommendations": [
+    "github.github-vscode-theme",
+    "eamodio.gitlens",
+    "esbenp.prettier-vscode",
+    "dbaeumer.vscode-eslint",
+    "pkief.material-icon-theme", 
+    "ms-azuretools.vscode-docker",
+    "github.copilot",
+    "editorconfig.editorconfig",
+    "streetsidesoftware.code-spell-checker",
+    "mikestead.dotenv",
+    "waderyan.gitblame",
+    "formulahendry.code-runner",
+    "rebornix.ruby",
+    "wingrunr21.vscode-ruby",
+    "castwide.solargraph",
+    "karunamurti.haml",
+    "davidanson.vscode-markdownlint",
+    "ms-vsliveshare.vsliveshare",
+    "wayou.vscode-todo-highlight",
+    "gruntfuggly.todo-tree"
+  ]
+}
