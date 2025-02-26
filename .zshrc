@@ -26,8 +26,8 @@ export EDITOR='vim'
 export DEV_DIR="$HOME/Developer"
 
 # Aliases
-alias ls="exa --icons --group-directories-first"
-alias ll="exa -lah --icons --group-directories-first"
+alias ls="eza --icons --group-directories-first"
+alias ll="eza -lah --icons --group-directories-first"
 alias cat="bat"
 alias find="fd"
 alias grep="rg"
@@ -51,11 +51,11 @@ eval "$(thefuck --alias)"
 
 # Johnny Decimal navigation for Documents
 jd() {
-  local base_dir="$HOME/Documents"
+  local base_dir="$HOME/Library/Mobile Documents/com~apple~CloudDocs/Documents"
   
   if [[ "$1" =~ ^[0-9]{2}$ ]]; then
     # Navigate to category by first 2 digits
-    local matches=$(find "$base_dir" -maxdepth 2 -type d -name "$1*" | sort)
+    local matches=$(fd -d 2 -t d "^${1}" "$base_dir" | sort)
     if [[ -n "$matches" ]]; then
       cd "$(echo "$matches" | head -n 1)"
     else
@@ -64,7 +64,7 @@ jd() {
   else
     echo "Usage: jd <2-digit category number>"
     echo "Available categories:"
-    find "$base_dir" -maxdepth 2 -type d -name "[0-9]*" | sort
+    fd -d 2 -t d "^[0-9]" "$base_dir" | sort
   fi
 }
 
@@ -73,7 +73,7 @@ dev() {
   if [[ -z "$1" ]]; then
     cd "$DEV_DIR"
   else
-    local matches=$(find "$DEV_DIR" -maxdepth 1 -type d -name "*$1*" | grep -v "^\." | sort)
+    local matches=$(fd -d 1 -t d --exclude ".*" "^.*${1}.*$" "$DEV_DIR" | sort)
     if [[ -n "$matches" ]]; then
       cd "$(echo "$matches" | head -n 1)"
     else
