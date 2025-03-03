@@ -80,7 +80,7 @@ else
 fi
 
 # atuin (command history)
-if command -v atuin &> /dev/null; then
+if [ -d "$HOME/.atuin/bin" ]; then
   . "$HOME/.atuin/bin/env"
   eval "$(atuin init zsh)"
 else
@@ -97,7 +97,7 @@ fi
 # Johnny Decimal navigation for Documents
 jd() {
   local base_dir="$HOME/Library/Mobile Documents/com~apple~CloudDocs/Documents"
-  
+
   if [[ "$1" =~ ^[0-9]{2}$ ]]; then
     # Navigate to category by first 2 digits
     local matches=$(fd -d 2 -t d "^${1}" "$base_dir" | sort)
@@ -129,3 +129,5 @@ dev() {
 
 # Local settings that shouldn't be in the dotfiles repo
 [[ -f ~/.zshrc.local ]] && source ~/.zshrc.local
+
+. "$HOME/.local/bin/env"
