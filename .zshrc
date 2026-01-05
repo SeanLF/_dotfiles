@@ -2,8 +2,8 @@
 if [ -d "$HOME/.oh-my-zsh" ]; then
   export ZSH="$HOME/.oh-my-zsh"
 
-  # Theme
-  ZSH_THEME="robbyrussell"
+  # Theme disabled - starship handles prompt
+  # ZSH_THEME="robbyrussell"
 
   # Plugins
   plugins=(
@@ -39,24 +39,26 @@ else
   alias ll="ls -lha"
 fi
 
-if command -v bat &> /dev/null; then
-  alias cat="bat"
-fi
-
-if command -v fd &> /dev/null; then
-  alias find="fd"
-fi
-
-if command -v rg &> /dev/null; then
-  alias grep="rg"
-fi
-
-if command -v nping &> /dev/null; then
-  alias ping="nping"
-fi
-
-# Add Visual Studio Code (code)
-export PATH="$PATH:/Applications/Visual Studio Code.app/Contents/Resources/app/bin"
+alias dc='docker compose'
+alias dcr='docker compose run --rm'
+alias code='cursor'
+online() {
+  local timeout=${1:-60}
+  local count=0
+  local spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+  printf "Waiting for connection  "
+  while ! curl -s --connect-timeout 2 1.1.1.1 >/dev/null 2>&1; do
+    ((count++))
+    if ((count >= timeout)); then
+      printf "\r\033[K✗ Timed out after ${timeout}s\n"
+      return 1
+    fi
+    printf "\b${spin:$((count%10)):1}"
+    sleep 1
+  done
+  printf "\r\033[K✓ Online after ${count}s\n"
+  osascript -e 'display notification "Internet accessible" with title "Network Status"'
+}
 
 # Starship prompt
 if command -v starship &> /dev/null; then
@@ -113,21 +115,12 @@ jd() {
   fi
 }
 
-# Developer directory quick navigation
-dev() {
-  if [[ -z "$1" ]]; then
-    cd "$DEV_DIR"
-  else
-    local matches=$(fd -d 1 -t d --exclude ".*" "^.*${1}.*$" "$DEV_DIR" | sort)
-    if [[ -n "$matches" ]]; then
-      cd "$(echo "$matches" | head -n 1)"
-    else
-      echo "No matching directory found: $1"
-    fi
-  fi
-}
+# Environment files
+[[ -f "$HOME/.local/bin/env" ]] && . "$HOME/.local/bin/env"
+[[ -f "$HOME/.langflow/uv/env" ]] && . "$HOME/.langflow/uv/env"
+
+# Misc settings
+export LESS="--mouse $LESS"
 
 # Local settings that shouldn't be in the dotfiles repo
 [[ -f ~/.zshrc.local ]] && source ~/.zshrc.local
-
-. "$HOME/.local/bin/env"
