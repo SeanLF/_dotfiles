@@ -28,6 +28,13 @@
 - Most comfortable: Ruby, Python
 - JS syntax familiar, ecosystem not — explain libs/frameworks when using them
 - Open to the best tool for the job; weigh trade-offs between not reinventing the wheel and dependency hell
+- Prefer Canadian spelling in English
+
+## Debugging Approach
+- Read output carefully the first time — don't skim past warnings or errors
+- Verify actual state before attempting fixes (e.g., check what env vars a container actually receives)
+- Trace problems backwards from symptoms to root cause — don't try random fixes
+- Understand the system before implementing workarounds
 
 ## Ruby Style
 - Shopify rubocop: explicit parentheses, trailing commas, guard clauses
