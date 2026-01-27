@@ -1,0 +1,9 @@
+[tools]
+ruby = "latest"
+uv = "latest"
+python = "latest"
+node = "latest"
+terraform = "latest"
+
+[settings]
+idiomatic_version_file_enable_tools = ["ruby"]

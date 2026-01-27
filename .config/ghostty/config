@@ -1,0 +1,23 @@
+# Ghostty Configuration
+
+# Automatically switch between light and dark themes based on system appearance
+theme = light:Rose Pine Dawn,dark:Rose Pine
+
+# macOS: Integrate tabs into titlebar for cleaner look
+macos-titlebar-style = tabs
+
+# Window size and padding
+window-height = 30
+window-width = 110
+window-padding-x = 8
+window-padding-y = 8
+
+# Shell integration for enhanced features
+shell-integration = detect
+
+# Keybindings
+keybind = shift+enter=text:\x1b\r
+
+# Update channel
+auto-update-channel = tip
+
