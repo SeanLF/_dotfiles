@@ -72,3 +72,6 @@
 All projects live under `~/Developer/`. When creating new projects, place them there. Throwaway experiments go in `~/Developer/_experiments/`.
 
 See `~/.claude/CLAUDE.local.md` for detailed project locations (not committed to git).
+
+## Persistent TODO
+For tasks that persist across sessions, check `.claude/tasks/todo.md` in the project directory (not the global `~/.claude/`).
