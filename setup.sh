@@ -81,7 +81,7 @@ setup_brew() {
 # Module: Symlinks
 setup_symlinks() {
   # Create config directories
-  mkdir -p "$HOME/.config/ghostty" "$HOME/.config/mise" \
+  mkdir -p "$HOME/.config/ghostty" "$HOME/.config/mise" "$HOME/.config/zed" \
            "$HOME/.local/bin" "$HOME/.claude" "$HOME/.ssh" "$HOME/Developer"
 
   # Symlink scripts from bin/
@@ -99,6 +99,7 @@ setup_symlinks() {
   symlink_with_diff "$DOTFILES_DIR/.config/starship.toml" "$HOME/.config/starship.toml"
   symlink_with_diff "$DOTFILES_DIR/.config/ghostty/config" "$HOME/.config/ghostty/config"
   symlink_with_diff "$DOTFILES_DIR/.config/mise/config.toml" "$HOME/.config/mise/config.toml"
+  symlink_with_diff "$DOTFILES_DIR/.config/zed/settings.json" "$HOME/.config/zed/settings.json"
   symlink_with_diff "$DOTFILES_DIR/.claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
 
   # SSH config (1Password agent)

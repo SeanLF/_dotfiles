@@ -81,8 +81,6 @@ cask "1password"
 cask "1password-cli"
 # OpenAI's official ChatGPT desktop app
 cask "chatgpt"
-# Write, edit, and chat about your code with AI
-cask "cursor"
 # Terminal emulator that uses platform-native UI and GPU acceleration
 cask "ghostty"
 # Desktop client for GitHub repositories
@@ -115,34 +113,3 @@ mas "Flighty", id: 1358823008
 mas "Little Snitch Mini", id: 1629008763
 mas "NextDNS", id: 1464122853
 mas "WhatsApp", id: 310633997
-vscode "aaron-bond.better-comments"
-vscode "alexkrechik.cucumberautocomplete"
-vscode "anthropic.claude-code"
-vscode "anysphere.cursorpyright"
-vscode "anysphere.pyright"
-vscode "anysphere.remote-containers"
-vscode "dbaeumer.vscode-eslint"
-vscode "eamodio.gitlens"
-vscode "editorconfig.editorconfig"
-vscode "esbenp.prettier-vscode"
-vscode "firefox-devtools.vscode-firefox-debug"
-vscode "foxundermoon.shell-format"
-vscode "github.codespaces"
-vscode "github.github-vscode-theme"
-vscode "golang.go"
-vscode "gruntfuggly.todo-tree"
-vscode "hashicorp.terraform"
-vscode "karunamurti.haml"
-vscode "koichisasada.vscode-rdbg"
-vscode "ms-azuretools.vscode-docker"
-vscode "ms-python.debugpy"
-vscode "ms-python.python"
-vscode "ms-python.vscode-pylance"
-vscode "ms-vsliveshare.vsliveshare"
-vscode "shopify.ruby-lsp"
-vscode "streetsidesoftware.code-spell-checker"
-vscode "vsls-contrib.codetour"
-vscode "william-voyek.vscode-nginx"
-vscode "wingrunr21.vscode-ruby"
-vscode "yzhang.markdown-all-in-one"
-vscode "zhuangtongfa.material-theme"

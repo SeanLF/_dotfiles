@@ -12,7 +12,7 @@ alias dc='docker compose'
 alias dcr='docker compose run --rm'
 
 # Editor
-alias code='cursor'
+alias code='zed'
 
 # Git
 alias g='git'
