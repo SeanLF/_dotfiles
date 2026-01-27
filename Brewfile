@@ -98,7 +98,7 @@ cask "protonvpn"
 # Control your tools with a few keystrokes
 cask "raycast"
 # Open-source media center
-cask "stremio"
+cask "stremio@beta"
 # Mesh VPN based on WireGuard
 cask "tailscale-app"
 # Calling and messaging application focusing on security
