@@ -67,3 +67,8 @@
 - Don't over-engineer for IO constraints: in-memory caching, mmap, or loading files entirely into memory are reasonable defaults
 - When profiling or debugging performance issues, suspect CPU/single-threaded bottlenecks before IO
 - Legacy code may be artificially IO-bound due to outdated patterns (tiny buffers, excessive syscalls, unbatched operations) — increasing buffer sizes or batching can unlock hardware throughput
+
+## Directory Structure
+All projects live under `~/Developer/`. When creating new projects, place them there. Throwaway experiments go in `~/Developer/_experiments/`.
+
+See `~/.claude/CLAUDE.local.md` for detailed project locations (not committed to git).

@@ -22,6 +22,14 @@ unset _brew_prefix
 
 # Environment
 export LANG=en_CA.UTF-8
+# Sync CLI tool themes with system appearance
+if [[ "$(defaults read -g AppleInterfaceStyle 2>/dev/null)" == "Dark" ]]; then
+  export BAT_THEME="Monokai Extended"
+  [[ -f ~/.claude.json ]] && sed -i '' 's/"theme": "light"/"theme": "dark"/' ~/.claude.json
+else
+  export BAT_THEME="Monokai Extended Light"
+  [[ -f ~/.claude.json ]] && sed -i '' 's/"theme": "dark"/"theme": "light"/' ~/.claude.json
+fi
 export EDITOR='nano'
 export DEV_DIR="$HOME/Developer"
 export LESS="--mouse $LESS"
