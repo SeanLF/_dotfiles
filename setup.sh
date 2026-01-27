@@ -50,6 +50,8 @@ ln -sf "$DOTFILES_DIR/.config/starship.toml" "$HOME/.config/starship.toml"
 ln -sf "$DOTFILES_DIR/.config/ghostty/config" "$HOME/.config/ghostty/config"
 ln -sf "$DOTFILES_DIR/.config/mise/config.toml" "$HOME/.config/mise/config.toml"
 ln -sf "$DOTFILES_DIR/.claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
+rm -rf "$HOME/.claude/commands" 2>/dev/null
+ln -sf "$DOTFILES_DIR/.claude/commands" "$HOME/.claude/commands"
 
 echo "Done! Restarting shell..."
 exec zsh -l
