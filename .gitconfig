@@ -35,6 +35,8 @@
 [core]
     excludesfile = ~/.gitignore_global
 	pager = delta
+[mailmap]
+	file = ~/Developer/_dotfiles/.mailmap
 [rebase]
     autoSquash = true
     autoStash = true
