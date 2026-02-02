@@ -19,6 +19,10 @@ brew cleanup
 info "Updating App Store apps..."
 mas upgrade || warn "mas upgrade failed (may need App Store login)"
 
+# Update tldr pages cache
+info "Updating tldr pages..."
+tldr --update
+
 # Sync Brewfile with installed packages
 info "Syncing Brewfile..."
 if [[ -f "$BREWFILE" ]]; then
