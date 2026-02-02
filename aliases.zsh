@@ -24,6 +24,7 @@ alias gco='git checkout'
 alias gd='git diff'
 alias gl='git pull'
 alias gp='git push'
+alias gpf='git push --force-with-lease'
 alias gst='git status'
 alias gsw='git switch'
 
