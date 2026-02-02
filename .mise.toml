@@ -1,0 +1,2 @@
+# Empty file to prevent mise from parsing .config/mise/config.toml as a project config
+# The actual global config is symlinked from ~/.config/mise/config.toml
