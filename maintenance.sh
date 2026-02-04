@@ -19,6 +19,14 @@ brew cleanup
 info "Updating App Store apps..."
 mas upgrade || warn "mas upgrade failed (may need App Store login)"
 
+# Update Claude Code
+info "Updating Claude Code..."
+claude update || warn "claude update failed"
+
+# Update mise tools
+info "Updating mise tools..."
+mise upgrade || warn "mise upgrade failed"
+
 # Update tldr pages cache
 info "Updating tldr pages..."
 tldr --update
