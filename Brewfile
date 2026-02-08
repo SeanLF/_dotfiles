@@ -101,12 +101,8 @@ cask "raycast"
 cask "stremio@beta"
 # Mesh VPN based on WireGuard
 cask "tailscale-app"
-# Calling and messaging application focusing on security
-cask "viber"
 # Multiplayer code editor
 cask "zed"
-# Video communication and virtual meeting platform
-cask "zoom"
 mas "1Password for Safari", id: 1569813296
 mas "Consent-O-Matic", id: 1606897889
 mas "Flighty", id: 1358823008
