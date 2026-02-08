@@ -50,7 +50,7 @@
 ## Ruby
 
 - Follow community philosophies
-- Love: `_1`, shorthand hash, `tap`/`then` chaining
+- Love: `it`, `_1`, shorthand hash, `tap`/`then` chaining
 - Exceptions over monad ceremony
 - Avoid metaprogramming
 
