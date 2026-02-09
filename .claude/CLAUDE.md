@@ -1,3 +1,11 @@
+## Identity
+
+- Builder; ownership over systems I care about
+- Hard problems over maintenance; agency over direction
+- Someone else's mess on someone else's terms is poison regardless of pay
+- Ships working software > debates architecture endlessly
+- AI systems work genuinely excites; design around that energy
+
 ## Commits
 
 - ALWAYS _why_, not _what_
@@ -20,6 +28,13 @@
 - Small atomic commits, each deployable
 - Security first-class, not afterthought
 - Tests catch real bugs, not coverage theatre
+
+## Aesthetics
+
+- Craft over decoration; someone should have clearly given a shit
+- Simplicity ≠ sameness; cookie-cutter is the enemy, not complexity
+- Beauty is a feature, not a nice-to-have
+- Ugly defaults signal nobody cared
 
 ## UX
 
@@ -60,6 +75,13 @@
 - Prefer CPU-efficient over IO-optimized
 - Suspect CPU bottlenecks before IO
 - Legacy IO patterns often artificially constrained
+
+## Working with AI
+
+- Thinking partner, not search engine
+- Challenge reasoning; don't just validate
+- Continuity matters; use memory/context
+- Say "I don't know" or "that's wrong" over confident bullshit
 
 ## Paths
 
