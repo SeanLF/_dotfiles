@@ -7,12 +7,8 @@ brew "bash"
 brew "bat"
 # Resource monitor. C++ version and continuation of bashtop and bpytop
 brew "btop"
-# Enables you to reproduce the CircleCI environment locally
-brew "circleci"
 # Get a file from an HTTP, HTTPS or FTP server
 brew "curl"
-# Command-line tool for DigitalOcean
-brew "doctl"
 # More intuitive version of du in rust
 brew "dust"
 # Modern, maintained replacement for ls
@@ -25,8 +21,6 @@ brew "fzf"
 brew "gawk"
 # GitHub command-line tool
 brew "gh"
-# Interpreter for PostScript and PDF
-brew "ghostscript"
 # Distributed revision control system
 brew "git"
 # Syntax-highlighting pager for git and diff output
@@ -63,8 +57,6 @@ brew "rv"
 brew "starship"
 # Programmatically correct mistyped console commands
 brew "thefuck"
-# Text interface for Git repositories
-brew "tig"
 # Official tldr client written in Rust
 brew "tlrc"
 # Vi 'workalike' with many additional features
@@ -89,8 +81,6 @@ cask "github"
 cask "google-chrome"
 # Free and open-source media player
 cask "iina"
-# Terminal emulator as alternative to Apple's Terminal app
-cask "iterm2"
 # Replacement for Docker Desktop
 cask "orbstack"
 # VPN client focusing on security
