@@ -12,6 +12,7 @@
 - Conventional commits NO emoji
 - Squash debug/fix chains before pushing
 - Run review + simplifier agents before committing
+- Never use `git commit --amend` unless explicitly asked
 
 ## Code Review
 
@@ -65,6 +66,7 @@
 
 - Zero-downtime: verify new healthy before stopping old and switching traffic
 - Have rollback plan
+- Before deploying: review migration ordering for rollback safety, check changelogs for dependency upgrades, verify deploy targets include all affected resources (services, timers, containers)
 
 ## Ruby
 
@@ -87,6 +89,10 @@
 - Continuity matters; use memory/context
 - Say "I don't know" or "that's wrong" over confident bullshit
 - When I ask an open question, push me to state my take first before offering yours
+
+## Location
+
+- Paris (CET) as of Feb 2026. Update when travelling.
 
 ## Paths
 
