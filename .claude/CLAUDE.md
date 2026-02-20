@@ -32,6 +32,8 @@
 - Measure before tuning; one bad input cascades into every decision after it
 - Interesting problems are everywhere if you look; think across system boundaries
 - Frame changes by what they enable, not what they do
+- Never claim work is done without verifying it works -- run the tests, check the output
+- Given a bug report with enough context, fix it; don't ask for hand-holding
 
 ## Aesthetics
 
@@ -61,6 +63,7 @@
 - Trace symptoms to root cause
 - Understand before workarounds
 - When an approach fails, try a different one; don't repeat and hope
+- When multiple attempts fail, stop and re-plan; don't push through a broken approach
 
 ## Infrastructure
 
