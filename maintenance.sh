@@ -20,8 +20,25 @@ info "Updating App Store apps..."
 mas upgrade || warn "mas upgrade failed (may need App Store login)"
 
 # Update Claude Code
+# Workaround: claude update downloads the full binary (~200MB) even when
+# already up-to-date. Check versions first to skip the download.
+# https://github.com/anthropics/claude-code/issues/20808
 info "Updating Claude Code..."
-claude update || warn "claude update failed"
+local_ver="$(claude --version 2>/dev/null | awk '{print $1}' || true)"
+dist_url="$(curl -sI https://claude.ai/install.sh 2>/dev/null \
+  | grep -i '^location:' | tr -d '\r' \
+  | sed 's/^[Ll]ocation: //; s|/bootstrap\.sh$||')"
+remote_ver="$(curl -sf "$dist_url/latest" 2>/dev/null || true)"
+if [[ -z "$remote_ver" ]]; then
+  warn "could not check latest Claude Code version, running claude update"
+  claude update || warn "claude update failed"
+elif [[ "$local_ver" == "$remote_ver" ]]; then
+  info "Claude Code is already up to date ($local_ver)"
+else
+  info "Claude Code $local_ver -> $remote_ver"
+  claude update || warn "claude update failed"
+fi
+unset local_ver dist_url remote_ver
 
 # Update mise tools
 info "Updating mise tools..."
