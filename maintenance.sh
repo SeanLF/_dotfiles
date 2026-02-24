@@ -3,17 +3,24 @@
 set -e
 
 info() { echo "$1"; }
-warn() { echo "WARNING: $1" >&2; }
+warn() { echo "WARNING: $1" >&2; failures+=("$1"); }
 
 DOTFILES_DIR="$(cd "$(dirname "$0")" && pwd)"
 BREWFILE="$DOTFILES_DIR/Brewfile"
+failures=()
+
+# Bail early if offline
+if ! online -q 5; then
+  echo "No network connectivity — skipping maintenance"
+  exit 1
+fi
 
 # Update Homebrew and packages
 info "Updating Homebrew packages..."
-brew update
-brew upgrade
-brew upgrade --cask
-brew cleanup
+brew update || warn "brew update failed"
+brew upgrade || warn "brew upgrade failed"
+brew upgrade --cask || warn "brew upgrade --cask failed"
+brew cleanup || warn "brew cleanup failed"
 
 # Update App Store apps
 info "Updating App Store apps..."
@@ -46,12 +53,12 @@ mise upgrade || warn "mise upgrade failed"
 
 # Update tldr pages cache
 info "Updating tldr pages..."
-tldr --update
+tldr --update || warn "tldr --update failed"
 
 # Sync Brewfile with installed packages
 info "Syncing Brewfile..."
 if [[ -f "$BREWFILE" ]]; then
-  brew bundle dump --file="$BREWFILE" --force --describe
+  brew bundle dump --file="$BREWFILE" --force --describe || warn "brew bundle dump failed"
   info "Brewfile updated"
 else
   warn "Brewfile not found at $BREWFILE"
@@ -61,4 +68,12 @@ fi
 info "Checking for macOS updates..."
 softwareupdate --list 2>&1 | grep -v "^Software Update Tool" || true
 
-info "Done!"
+# Recap
+if [[ ${#failures[@]} -gt 0 ]]; then
+  echo ""
+  echo "Finished with ${#failures[@]} warning(s):"
+  for f in "${failures[@]}"; do echo "  - $f"; done
+  exit 1
+else
+  info "Done — all clear!"
+fi
