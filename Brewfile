@@ -51,6 +51,8 @@ brew "nbping"
 brew "perl"
 # Search tool like grep and The Silver Searcher
 brew "ripgrep"
+# CLI proxy to minimize LLM token consumption
+brew "rtk"
 # Ruby version manager
 brew "rv"
 # Cross-shell prompt for astronauts

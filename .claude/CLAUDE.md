@@ -102,3 +102,5 @@
 - Projects: `~/Developer/`, experiments: `~/Developer/_experiments/`
 - Persistent tasks: `.claude/tasks/todo.md` (per-project)
 - Writing in my voice: read `~/.claude/writing-style.md`
+
+@RTK.md
