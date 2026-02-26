@@ -47,6 +47,8 @@ brew "mas"
 brew "mise"
 # Ping Tool in Rust with Real-Time Data and Visualizations
 brew "nbping"
+# CLI for NextDNS's DNS-over-HTTPS (DoH)
+brew "nextdns"
 # Highly capable, feature-rich programming language
 brew "perl"
 # Search tool like grep and The Silver Searcher
@@ -99,5 +101,4 @@ mas "1Password for Safari", id: 1569813296
 mas "Consent-O-Matic", id: 1606897889
 mas "Flighty", id: 1358823008
 mas "Little Snitch Mini", id: 1629008763
-mas "NextDNS", id: 1464122853
 mas "WhatsApp", id: 310633997
