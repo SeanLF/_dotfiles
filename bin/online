@@ -34,7 +34,7 @@ spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
 
 $quiet || printf "Waiting for connection  "
 
-while ! curl -s --connect-timeout 2 1.1.1.1 >/dev/null 2>&1; do
+while ! ping -c1 -t2 1.1.1.1 >/dev/null 2>&1; do
   ((count++))
   if ((count >= timeout)); then
     $quiet || printf "\r\033[K✗ Timed out after %ds\n" "$timeout"
