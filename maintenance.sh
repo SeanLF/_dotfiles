@@ -54,6 +54,19 @@ else
 fi
 unset local_ver dist_url remote_ver
 
+step "NextDNS CLI"
+if ndns_out="$(nextdns upgrade 2>&1)"; then
+  if echo "$ndns_out" | grep -q "Already on the latest"; then
+    ok "NextDNS is already up to date ($(nextdns version | awk '{print $NF}'))"
+  else
+    echo "$ndns_out"
+  fi
+else
+  echo "$ndns_out"
+  warn "nextdns upgrade failed"
+fi
+unset ndns_out
+
 step "mise"
 mise upgrade || warn "mise upgrade failed"
 
