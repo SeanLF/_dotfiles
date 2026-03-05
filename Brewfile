@@ -27,6 +27,8 @@ brew "git"
 brew "git-delta"
 # GNU Privacy Guard (OpenPGP)
 brew "gnupg"
+# HTTP load generator, ApacheBench (ab) replacement
+brew "hey"
 # Command-line tool to export and inspect local iMessage database
 brew "imessage-exporter"
 # Command-line pager for JSON data
@@ -41,6 +43,8 @@ brew "lefthook"
 brew "less"
 # YAML Parser
 brew "libyaml"
+# Find what models run on your hardware
+brew "llmfit"
 # Mac App Store command-line interface
 brew "mas"
 # Polyglot runtime manager (asdf rust clone)
