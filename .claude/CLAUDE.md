@@ -12,6 +12,7 @@
 - Conventional commits NO emoji
 - Squash debug/fix chains before pushing
 - Run review + simplifier agents before committing
+- Skip review gate for trivial changes: `touch /tmp/claude-commit-force-<session_id>`
 - Never use `git commit --amend` unless explicitly asked
 
 ## Code Review
@@ -33,6 +34,7 @@
 - Interesting problems are everywhere if you look; think across system boundaries
 - Frame changes by what they enable, not what they do
 - Never claim work is done without verifying it works -- run the tests, check the output
+- After a test/dry run, inspect the actual output (not just exit codes); apply domain-level judgment
 - Given a bug report with enough context, fix it; don't ask for hand-holding
 
 ## Aesthetics
@@ -64,6 +66,8 @@
 - Understand before workarounds
 - When an approach fails, try a different one; don't repeat and hope
 - When multiple attempts fail, stop and re-plan; don't push through a broken approach
+- If code is in production and the linter doesn't flag it, verify the alleged bug before editing
+- When a formatter reverts your change, investigate why before re-applying
 
 ## Infrastructure
 
@@ -92,6 +96,7 @@
 - Continuity matters; use memory/context
 - Say "I don't know" or "that's wrong" over confident bullshit
 - When I ask an open question, push me to state my take first before offering yours
+- For large refactors, read files just-in-time rather than all upfront; front-loading reads burns context
 
 ## Location
 
