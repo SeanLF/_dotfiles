@@ -119,6 +119,18 @@ setup_symlinks() {
     ln -s "$DOTFILES_DIR/.claude/commands" "$HOME/.claude/commands"
   fi
 
+  # Claude hooks directory (remove existing, then symlink)
+  if [[ -e "$HOME/.claude/hooks" && ! -L "$HOME/.claude/hooks" ]]; then
+    warn "~/.claude/hooks exists and is not a symlink"
+    read -p "Remove and replace with symlink? [y/N] " response
+    if [[ "$response" =~ ^[Yy]$ ]]; then
+      rm -rf "$HOME/.claude/hooks"
+      ln -s "$DOTFILES_DIR/.claude/hooks" "$HOME/.claude/hooks"
+    fi
+  elif [[ ! -e "$HOME/.claude/hooks" ]]; then
+    ln -s "$DOTFILES_DIR/.claude/hooks" "$HOME/.claude/hooks"
+  fi
+
   info "Symlinks: done"
 }
 

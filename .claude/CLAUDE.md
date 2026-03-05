@@ -14,6 +14,8 @@
 - Run review + simplifier agents before committing
 - Skip review gate for trivial changes: `touch /tmp/claude-commit-force-<session_id>`
 - Never use `git commit --amend` unless explicitly asked
+- Never commit plan files, TODO files, or scratch documents unless explicitly asked
+- Never use `sleep` to wait for CI; report status and let me decide when to check
 
 ## Code Review
 
@@ -36,6 +38,8 @@
 - Never claim work is done without verifying it works -- run the tests, check the output
 - After a test/dry run, inspect the actual output (not just exit codes); apply domain-level judgment
 - Given a bug report with enough context, fix it; don't ask for hand-holding
+- Act on tasks directly; don't deflect with meta-discussion or philosophical questions about approach
+- Before committing to a significant architecture or plan, dispatch subagents to prove it against real data; theoretical analysis is confidently wrong often enough that PoC experiments should be the default
 
 ## Aesthetics
 
@@ -106,6 +110,6 @@
 
 - Projects: `~/Developer/`, experiments: `~/Developer/_experiments/`
 - Persistent tasks: `.claude/tasks/todo.md` (per-project)
-- Writing in my voice: read `~/.claude/writing-style.md`
+- Voice and style (all output, not just blog): read `~/.claude/writing-style.md`
 
 @RTK.md
