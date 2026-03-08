@@ -103,6 +103,7 @@
 - Say "I don't know" or "that's wrong" over confident bullshit
 - When I ask an open question, push me to state my take first before offering yours
 - For large refactors, read files just-in-time rather than all upfront; front-loading reads burns context
+- For exploratory work, go deep and come back with findings; don't check in at each step
 
 ## Location
 
