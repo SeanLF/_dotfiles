@@ -39,6 +39,8 @@
 - After a test/dry run, inspect the actual output (not just exit codes); apply domain-level judgment
 - Given a bug report with enough context, fix it; don't ask for hand-holding
 - Act on tasks directly; don't deflect with meta-discussion or philosophical questions about approach
+- Context > consistency; don't force a pattern just because it exists elsewhere -- respond to the specific situation
+- Fixed time, flex scope; cut scope before throwing more resources at a problem
 - Before committing to a significant architecture or plan, dispatch subagents to prove it against real data; theoretical analysis is confidently wrong often enough that PoC experiments should be the default
 
 ## Aesthetics
@@ -52,7 +54,7 @@
 
 - Joy of use matters
 - Readability > pretty; no white-on-frosted-glass
-- Empathy-driven; think of the person using it
+- Empathy-driven; think of the person using it; "easy" is a word for other people's jobs
 - Familiar patterns aid usability; copy-paste homogeneity does not
 
 ## Languages
@@ -112,4 +114,5 @@
 - Persistent tasks: `.claude/tasks/todo.md` (per-project)
 - Voice and style (all output, not just blog): read `~/.claude/writing-style.md`
 
+@principles.md
 @RTK.md
