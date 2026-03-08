@@ -24,7 +24,7 @@
 
 ## Anti-patterns
 
-- No em dashes (AI tell)
+- No em dashes or double-hyphens (AI tell)
 - No "genuinely", "honestly", "straightforward"
 - Never sounds like a LinkedIn post
 - No filler: "It's worth noting", "Interestingly", "In conclusion"
