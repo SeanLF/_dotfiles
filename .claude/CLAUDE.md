@@ -105,15 +105,15 @@
 - For large refactors, read files just-in-time rather than all upfront; front-loading reads burns context
 - For exploratory work, go deep and come back with findings; don't check in at each step
 
-## Location
-
-- Paris (CET) as of Feb 2026. Update when travelling.
-
 ## Paths
 
 - Projects: `~/Developer/`, experiments: `~/Developer/_experiments/`
 - Persistent tasks: `.claude/tasks/todo.md` (per-project)
 - Voice and style (all output, not just blog): read `~/.claude/writing-style.md`
+
+## Location
+
+- Paris (CET) as of Feb 2026. Update when travelling.
 
 @principles.md
 @RTK.md
