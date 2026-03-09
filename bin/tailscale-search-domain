@@ -1,0 +1,19 @@
+#!/bin/bash
+# Add Tailscale MagicDNS search domain to macOS resolver config
+# Called at boot (launchd) and by fix-dns Raycast script
+
+ts_domain=$(/usr/local/bin/tailscale status --json 2>/dev/null \
+  | /usr/bin/python3 -c "import sys,json; print(json.load(sys.stdin)['CurrentTailnet']['MagicDNSSuffix'])" 2>/dev/null)
+
+[[ -z "$ts_domain" ]] && exit 0
+
+# Skip if already set
+scutil --dns 2>/dev/null | grep -q "$ts_domain" && exit 0
+
+scutil <<SCUTIL
+d.init
+d.add ServerAddresses * 100.100.100.100
+d.add SearchDomains * $ts_domain
+d.add SupplementalMatchDomains * $ts_domain
+set State:/Network/Service/Tailscale/DNS
+SCUTIL
