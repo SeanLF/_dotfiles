@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+"""Apply preferred NextDNS config to a profile.
+
+Usage: nextdns-configure <api_key> <profile_id>
+
+Idempotent -- safe to re-run anytime to reset a profile.
+Config: Safari-only (Mac + iPhone), no browser extensions.
+"""
+
+import json
+import sys
+import urllib.request
+
+BLOCKLISTS = ["hagezi-multi-pro-plus", "oisd"]
+
+SECURITY = {
+    "threatIntelligenceFeeds": True,
+    "aiThreatDetection": True,
+    "googleSafeBrowsing": True,  # no uBlock Origin in Safari
+    "cryptojacking": True,
+    "dnsRebinding": True,
+    "idnHomographs": True,
+    "typosquatting": True,
+    "dga": True,
+    "nrd": True,
+    "ddns": True,
+    "parking": True,
+    "csam": True,
+}
+
+PRIVACY = {
+    "disguisedTrackers": True,  # Safari has no CNAME uncloaking extension
+    "allowAffiliate": True,
+}
+
+NATIVES = ["apple"]
+
+SETTINGS = {
+    "blockPage": {"enabled": False},
+    "performance": {
+        "ecs": False,
+        "cacheBoost": True,
+        "cnameFlattening": True,
+    },
+    "web3": False,
+}
+
+
+def api(key, method, path, data=None):
+    body = json.dumps(data).encode() if data else None
+    req = urllib.request.Request(
+        f"https://api.nextdns.io/profiles/{path}", data=body, method=method
+    )
+    req.add_header("X-Api-Key", key)
+    req.add_header("Content-Type", "application/json")
+    req.add_header("User-Agent", "curl/8.0")
+    try:
+        with urllib.request.urlopen(req) as resp:
+            if method == "GET":
+                return json.loads(resp.read())["data"]
+            return resp.status
+    except urllib.error.HTTPError as e:
+        if e.code in (400, 409):
+            return "exists"
+        sys.exit(f"FATAL: {method} {path} returned {e.code}")
+
+
+def configure(key, pid):
+    print(f"Configuring profile {pid}\n")
+
+    # Security
+    print("Security...", end=" ")
+    print(api(key, "PATCH", f"{pid}/security", SECURITY))
+
+    # Remove all current blocklists, then add desired ones
+    current = api(key, "GET", f"{pid}/privacy")
+    for bl in current.get("blocklists", []):
+        if bl["id"] not in BLOCKLISTS:
+            print(f"  Remove blocklist {bl['id']}...", end=" ")
+            print(api(key, "DELETE", f"{pid}/privacy/blocklists/{bl['id']}"))
+    for bid in BLOCKLISTS:
+        print(f"  Add blocklist {bid}...", end=" ")
+        print(api(key, "POST", f"{pid}/privacy/blocklists", {"id": bid}))
+
+    # Privacy flags
+    print("Privacy...", end=" ")
+    print(api(key, "PATCH", f"{pid}/privacy", PRIVACY))
+
+    # Native tracking
+    for nid in NATIVES:
+        print(f"  Native {nid}...", end=" ")
+        print(api(key, "POST", f"{pid}/privacy/natives", {"id": nid}))
+
+    # Settings
+    print("Settings...", end=" ")
+    print(api(key, "PATCH", f"{pid}/settings", SETTINGS))
+
+    print("\nDone.")
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 3:
+        print(__doc__.strip())
+        sys.exit(1)
+    configure(sys.argv[1], sys.argv[2])
