@@ -1,4 +1,5 @@
 tap "homebrew/autoupdate"
+tap "teamookla/speedtest"
 # Library for command-line editing
 brew "readline"
 # Bourne-Again SHell, a UNIX command interpreter

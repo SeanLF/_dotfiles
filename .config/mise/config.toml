@@ -4,6 +4,7 @@ uv = "latest"
 python = "latest"
 node = "latest"
 terraform = "latest"
+rust = "latest"
 
 [settings]
 idiomatic_version_file_enable_tools = ["ruby"]
