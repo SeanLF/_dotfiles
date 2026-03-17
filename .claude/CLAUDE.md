@@ -12,7 +12,8 @@
 - Conventional commits NO emoji
 - Squash debug/fix chains before pushing
 - Run review + simplifier agents before committing
-- Skip review gate for trivial changes: `touch /tmp/claude-commit-force-<session_id>`
+- Skip review gate ONLY for trivial changes (typos, config tweaks, single-line fixes): `touch /tmp/claude-commit-force-<session_id>`
+- If the diff touches more than ~3 files or includes logic/layout/routing changes, run the review -- no exceptions
 - Never use `git commit --amend` unless explicitly asked
 - Never commit plan files, TODO files, or scratch documents unless explicitly asked
 - Never use `sleep` to wait for CI; report status and let me decide when to check
