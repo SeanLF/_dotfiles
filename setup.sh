@@ -87,7 +87,7 @@ setup_brew() {
 setup_symlinks() {
   # Create config directories
   mkdir -p "$HOME/.config/ghostty" "$HOME/.config/mise" "$HOME/.config/zed" \
-           "$HOME/.local/bin" "$HOME/.claude" "$HOME/.ssh" "$HOME/Developer"
+           "$HOME/.local/bin" "$HOME/.claude" "$HOME/.ssh" "$HOME/.playwright" "$HOME/Developer"
 
   # Symlink scripts from bin/
   if compgen -G "$DOTFILES_DIR/bin/*" > /dev/null; then
@@ -106,6 +106,7 @@ setup_symlinks() {
   symlink_with_diff "$DOTFILES_DIR/.config/mise/config.toml" "$HOME/.config/mise/config.toml"
   symlink_with_diff "$DOTFILES_DIR/.config/zed/settings.json" "$HOME/.config/zed/settings.json"
   symlink_with_diff "$DOTFILES_DIR/.claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
+  symlink_with_diff "$DOTFILES_DIR/.playwright/cli.config.json" "$HOME/.playwright/cli.config.json"
 
   # SSH config (1Password agent)
   if [[ -f "$DOTFILES_DIR/.ssh/config" ]]; then

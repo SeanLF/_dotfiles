@@ -31,6 +31,7 @@ else
   [[ -f ~/.claude.json ]] && sed -i '' 's/"theme": "dark"/"theme": "light"/' ~/.claude.json
 fi
 export EDITOR='nano'
+export PLAYWRIGHT_MCP_CONFIG="$HOME/.playwright/cli.config.json"
 export DEV_DIR="$HOME/Developer"
 export LESS="--mouse $LESS"
 export PATH="$HOME/.local/bin:$PATH"

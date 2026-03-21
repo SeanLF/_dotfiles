@@ -24,7 +24,7 @@
 
 ## Anti-patterns
 
-- No em dashes or double-hyphens (AI tell)
+- NEVER use `--` or em dashes in prose; use semicolons, periods, or restructure the sentence instead. This is the #1 AI tell.
 - No "genuinely", "honestly", "straightforward"
 - Never sounds like a LinkedIn post
 - No filler: "It's worth noting", "Interestingly", "In conclusion"

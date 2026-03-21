@@ -90,6 +90,8 @@ cask "github"
 cask "google-chrome"
 # Free and open-source media player
 cask "iina"
+# Reverse proxy, secure introspectable tunnels to localhost
+cask "ngrok"
 # Replacement for Docker Desktop
 cask "orbstack"
 # VPN client focusing on security

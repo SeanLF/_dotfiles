@@ -13,7 +13,7 @@
 - Squash debug/fix chains before pushing
 - Run review + simplifier agents before committing
 - Skip review gate ONLY for trivial changes (typos, config tweaks, single-line fixes): `touch /tmp/claude-commit-force-<session_id>`
-- If the diff touches more than ~3 files or includes logic/layout/routing changes, run the review -- no exceptions
+- If the diff touches more than ~3 files or includes logic/layout/routing changes, run the review; no exceptions
 - Never use `git commit --amend` unless explicitly asked
 - Never commit plan files, TODO files, or scratch documents unless explicitly asked
 - Never use `sleep` to wait for CI; report status and let me decide when to check
@@ -36,11 +36,11 @@
 - Measure before tuning; one bad input cascades into every decision after it
 - Interesting problems are everywhere if you look; think across system boundaries
 - Frame changes by what they enable, not what they do
-- Never claim work is done without verifying it works -- run the tests, check the output
+- Never claim work is done without verifying it works; run the tests, check the output
 - After a test/dry run, inspect the actual output (not just exit codes); apply domain-level judgment
 - Given a bug report with enough context, fix it; don't ask for hand-holding
 - Act on tasks directly; don't deflect with meta-discussion or philosophical questions about approach
-- Context > consistency; don't force a pattern just because it exists elsewhere -- respond to the specific situation
+- Context > consistency; don't force a pattern just because it exists elsewhere; respond to the specific situation
 - Fixed time, flex scope; cut scope before throwing more resources at a problem
 - Before committing to a significant architecture or plan, dispatch subagents to prove it against real data; theoretical analysis is confidently wrong often enough that PoC experiments should be the default
 
