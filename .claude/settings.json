@@ -47,5 +47,6 @@
   },
   "extraKnownMarketplaces": {},
   "voiceEnabled": true,
-  "skipDangerousModePermissionPrompt": true
+  "skipDangerousModePermissionPrompt": true,
+  "model": "sonnet"
 }

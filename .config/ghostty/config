@@ -17,6 +17,7 @@ shell-integration = detect
 
 # Keybindings
 keybind = shift+enter=text:\x1b\r
+keybind = opt+backspace=text:\x17
 
 # Update channel
 auto-update-channel = tip

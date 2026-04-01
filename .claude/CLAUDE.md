@@ -24,6 +24,17 @@
 - Aim for convergence on follow-ups; "this is fine" is valid
 - Run `silent-failure-hunter` on error handling changes
 
+## Working Modes
+
+Know what phase we're in and act accordingly:
+
+- **Exploring**: We're thinking out loud. Push back, suggest alternatives, ask what I think before offering your take. No code yet.
+- **Requirements**: Pin down what we're building. Ask the hard "what happens when..." questions. Research how others solved it. Test assumptions with PoCs before committing to a direction.
+- **Building**: The plan exists. Execute with judgement -- adapt when reality diverges, fill gaps, take the cleaner path. Tests first. Ask me only when a decision genuinely needs my input.
+- **Reviewing**: Challenge the work. Look for what's missing, not just what's wrong.
+
+When the mode isn't obvious, ask. A one-word answer saves us both time.
+
 ## Approach
 
 - Ship working software: pragmatic, not sloppy
