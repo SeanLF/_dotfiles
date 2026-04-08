@@ -1,0 +1,18 @@
+#!/bin/bash
+# Run system maintenance, stream to stdout, then summarize with Claude Haiku.
+set -o pipefail
+
+BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+LOG="$(mktemp -t maint.XXXXXX)"
+trap 'rm -f "$LOG"' EXIT
+
+"$BIN_DIR/maintenance" 2>&1 | tee "$LOG"
+status=${PIPESTATUS[0]}
+
+echo
+echo "── Summary ──"
+claude -p --model claude-haiku-4-5 \
+  "Summarize this system maintenance run in a few bullets. Call out any failures, warnings, or anything unusual. Be terse." \
+  < "$LOG"
+
+exit $status

@@ -22,14 +22,9 @@ unset _brew_prefix
 
 # Environment
 export LANG=en_CA.UTF-8
-# Sync CLI tool themes with system appearance
-if [[ "$(defaults read -g AppleInterfaceStyle 2>/dev/null)" == "Dark" ]]; then
-  export BAT_THEME="Monokai Extended"
-  [[ -f ~/.claude.json ]] && sed -i '' 's/"theme": "light"/"theme": "dark"/' ~/.claude.json
-else
-  export BAT_THEME="Monokai Extended Light"
-  [[ -f ~/.claude.json ]] && sed -i '' 's/"theme": "dark"/"theme": "light"/' ~/.claude.json
-fi
+# bat and Claude Code both detect terminal background at runtime; set per-mode themes.
+export BAT_THEME_DARK="Monokai Extended"
+export BAT_THEME_LIGHT="Monokai Extended Light"
 export EDITOR='nano'
 export PLAYWRIGHT_MCP_CONFIG="$HOME/.playwright/cli.config.json"
 export DEV_DIR="$HOME/Developer"

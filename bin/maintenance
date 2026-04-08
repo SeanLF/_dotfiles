@@ -15,7 +15,7 @@ info() { echo -e "${dim}$1${reset}"; }
 ok()   { echo -e "${green}$1${reset}"; }
 warn() { echo -e "${yellow}$1${reset}" >&2; failures+=("$1"); }
 
-DOTFILES_DIR="$(cd "$(dirname "$0")" && pwd)"
+DOTFILES_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BREWFILE="$DOTFILES_DIR/Brewfile"
 failures=()
 
