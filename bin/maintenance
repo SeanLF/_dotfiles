@@ -1,6 +1,16 @@
 #!/bin/bash
-# System maintenance — run periodically to keep packages updated
+# System maintenance — run periodically to keep packages updated.
+# Pass --check to preview what *would* be upgraded without changing anything.
 set -e
+
+CHECK_ONLY=false
+for arg in "$@"; do
+  case "$arg" in
+    --check|-n) CHECK_ONLY=true ;;
+    -h|--help) echo "Usage: $0 [--check]"; exit 0 ;;
+    *) echo "unknown argument: $arg" >&2; echo "Usage: $0 [--check]" >&2; exit 2 ;;
+  esac
+done
 
 # Activate mise so tools it manages (tldr, gh, etc.) are on PATH for this script.
 # Maintenance runs non-interactively, so mise's shell prompt hooks don't fire;
@@ -35,15 +45,27 @@ fi
 
 step "Homebrew"
 brew update || warn "brew update failed"
-brew upgrade || warn "brew upgrade failed"
-brew upgrade --cask || warn "brew upgrade --cask failed"
-brew cleanup || warn "brew cleanup failed"
+if $CHECK_ONLY; then
+  brew outdated || true
+  brew outdated --cask --greedy-auto-updates || true
+else
+  brew upgrade || warn "brew upgrade failed"
+  brew upgrade --cask || warn "brew upgrade --cask failed"
+  brew autoremove || warn "brew autoremove failed"
+  brew cleanup || warn "brew cleanup failed"
+fi
 
 step "App Store"
-mas upgrade || warn "mas upgrade failed (may need App Store login)"
+if $CHECK_ONLY; then
+  mas outdated || true
+else
+  mas upgrade || warn "mas upgrade failed (may need App Store login)"
+fi
 
 # Workaround: claude update downloads the full binary (~200MB) even when
 # already up-to-date. Check versions first to skip the download.
+# (Claude Code also auto-upgrades while running; this just prefetches before
+# the next session starts.)
 # https://github.com/anthropics/claude-code/issues/20808
 step "Claude Code"
 local_ver="$(claude --version 2>/dev/null | awk '{print $1}' || true)"
@@ -52,46 +74,55 @@ dist_url="$(curl -sI https://claude.ai/install.sh 2>/dev/null \
   | sed 's/^[Ll]ocation: //; s|/bootstrap\.sh$||')"
 remote_ver="$(curl -sf "$dist_url/latest" 2>/dev/null || true)"
 if [[ -z "$remote_ver" ]]; then
-  warn "could not check latest Claude Code version, running claude update"
-  claude update || warn "claude update failed"
+  if $CHECK_ONLY; then
+    warn "could not check latest Claude Code version"
+  else
+    warn "could not check latest Claude Code version, running claude update"
+    claude update || warn "claude update failed"
+  fi
 elif [[ "$local_ver" == "$remote_ver" ]]; then
   ok "Claude Code is already up to date ($local_ver)"
 else
   info "Claude Code $local_ver -> $remote_ver"
-  claude update || warn "claude update failed"
+  if ! $CHECK_ONLY; then
+    claude update || warn "claude update failed"
+  fi
 fi
 unset local_ver dist_url remote_ver
 
-step "NextDNS CLI"
-if ndns_out="$(nextdns upgrade 2>&1)"; then
-  if echo "$ndns_out" | grep -q "Already on the latest"; then
-    ok "NextDNS is already up to date ($(nextdns version | awk '{print $NF}'))"
-  else
-    echo "$ndns_out"
-  fi
-else
-  echo "$ndns_out"
-  warn "nextdns upgrade failed"
-fi
-unset ndns_out
+# NextDNS is installed via Homebrew, so `brew upgrade` above already handles it.
+# The CLI's own `nextdns upgrade` subcommand can't overwrite a brew-managed
+# binary ("Cannot detect running environment") — brew owns the install path.
 
 step "mise"
-# Scope GITHUB_TOKEN to just `mise upgrade` so it doesn't leak to other steps.
+# Scope GITHUB_TOKEN to just this step so it doesn't leak to other tools.
 # Without it, mise's "latest" resolution hits unauthenticated GitHub rate limits.
+gh_token=""
 if command -v gh &>/dev/null && gh auth status &>/dev/null; then
-  GITHUB_TOKEN="$(gh auth token)" mise upgrade || warn "mise upgrade failed"
-else
-  mise upgrade || warn "mise upgrade failed"
+  gh_token="$(gh auth token)"
 fi
+if $CHECK_ONLY; then
+  GITHUB_TOKEN="$gh_token" mise outdated || true
+else
+  GITHUB_TOKEN="$gh_token" mise upgrade || warn "mise upgrade failed"
+  mise prune --yes || warn "mise prune failed"
+fi
+unset gh_token
 
 step "uv tools"
-uv tool upgrade --all || warn "uv tool upgrade failed"
+if $CHECK_ONLY; then
+  uv tool list --outdated 2>/dev/null || uv tool list || true
+else
+  uv tool upgrade --all || warn "uv tool upgrade failed"
+fi
 
 step "tldr"
-tldr --update || warn "tldr --update failed"
+$CHECK_ONLY || tldr --update || warn "tldr --update failed"
 
 step "Brewfile"
-if [[ -f "$BREWFILE" ]]; then
+if $CHECK_ONLY; then
+  info "(skipped in --check mode)"
+elif [[ -f "$BREWFILE" ]]; then
   brew bundle dump --file="$BREWFILE" --force --describe || warn "brew bundle dump failed"
   ok "Brewfile updated"
 else

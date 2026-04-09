@@ -6,7 +6,7 @@ BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
 LOG="$(mktemp -t maint.XXXXXX)"
 trap 'rm -f "$LOG"' EXIT
 
-"$BIN_DIR/maintenance" 2>&1 | tee "$LOG"
+"$BIN_DIR/maintenance" "$@" 2>&1 | tee "$LOG"
 status=${PIPESTATUS[0]}
 
 echo
