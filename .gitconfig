@@ -1,6 +1,6 @@
 [user]
 	name = Sean Floyd
-	email = contact@seanfloyd.dev
+	email = git@seanfloyd.dev
 	signingkey = ~/.ssh/id_ed25519.pub
 
 [column]
