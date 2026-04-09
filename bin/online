@@ -22,10 +22,19 @@ timeout=60
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -q|--quiet) quiet=true; shift ;;
-    -h|--help) show_help ;;
-    -*) echo "Unknown option: $1" >&2; exit 1 ;;
-    *) timeout="$1"; shift ;;
+    -q | --quiet)
+      quiet=true
+      shift
+      ;;
+    -h | --help) show_help ;;
+    -*)
+      echo "Unknown option: $1" >&2
+      exit 1
+      ;;
+    *)
+      timeout="$1"
+      shift
+      ;;
   esac
 done
 
@@ -40,7 +49,7 @@ while ! ping -c1 -t2 1.1.1.1 >/dev/null 2>&1; do
     $quiet || printf "\r\033[K✗ Timed out after %ds\n" "$timeout"
     exit 1
   fi
-  $quiet || printf "\b%s" "${spin:$((count%10)):1}"
+  $quiet || printf "\b%s" "${spin:$((count % 10)):1}"
   sleep 1
 done
 

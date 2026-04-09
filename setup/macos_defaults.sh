@@ -11,7 +11,7 @@ declare -A EXPECTED=(
   ["com.apple.finder:ShowPathbar"]="bool:true"
   ["com.apple.finder:ShowStatusBar"]="bool:true"
   ["com.apple.finder:_FXSortFoldersFirst"]="bool:true"
-  ["com.apple.finder:FXDefaultSearchScope"]="string:SCcf"  # Search current folder
+  ["com.apple.finder:FXDefaultSearchScope"]="string:SCcf" # Search current folder
   ["com.apple.finder:FXEnableExtensionChangeWarning"]="bool:false"
 
   # Keyboard
@@ -40,8 +40,8 @@ declare -A EXPECTED=(
 # Normalize boolean representations to "true"/"false"
 normalize_bool() {
   case "$1" in
-    1|true|TRUE|yes|YES) echo "true" ;;
-    0|false|FALSE|no|NO) echo "false" ;;
+    1 | true | TRUE | yes | YES) echo "true" ;;
+    0 | false | FALSE | no | NO) echo "false" ;;
     *) echo "$1" ;;
   esac
 }
@@ -50,7 +50,10 @@ normalize_bool() {
 read_default() {
   local domain="$1" key="$2"
   local value
-  value=$(defaults read "$domain" "$key" 2>/dev/null) || { echo "UNSET"; return; }
+  value=$(defaults read "$domain" "$key" 2>/dev/null) || {
+    echo "UNSET"
+    return
+  }
   normalize_bool "$value"
 }
 
@@ -105,9 +108,9 @@ apply_defaults() {
     local value="${spec#*:}"
 
     case "$type" in
-      bool)   defaults write "$domain" "$name" -bool "$value" ;;
-      int)    defaults write "$domain" "$name" -int "$value" ;;
-      float)  defaults write "$domain" "$name" -float "$value" ;;
+      bool) defaults write "$domain" "$name" -bool "$value" ;;
+      int) defaults write "$domain" "$name" -int "$value" ;;
+      float) defaults write "$domain" "$name" -float "$value" ;;
       string) defaults write "$domain" "$name" -string "$value" ;;
     esac
   done
@@ -123,10 +126,10 @@ apply_defaults() {
 # Run directly
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   case "${1:-}" in
-    --apply|-a)
+    --apply | -a)
       apply_defaults
       ;;
-    --check|-c|"")
+    --check | -c | "")
       check_defaults
       ;;
     *)

@@ -6,9 +6,16 @@ set -e
 CHECK_ONLY=false
 for arg in "$@"; do
   case "$arg" in
-    --check|-n) CHECK_ONLY=true ;;
-    -h|--help) echo "Usage: $0 [--check]"; exit 0 ;;
-    *) echo "unknown argument: $arg" >&2; echo "Usage: $0 [--check]" >&2; exit 2 ;;
+    --check | -n) CHECK_ONLY=true ;;
+    -h | --help)
+      echo "Usage: $0 [--check]"
+      exit 0
+      ;;
+    *)
+      echo "unknown argument: $arg" >&2
+      echo "Usage: $0 [--check]" >&2
+      exit 2
+      ;;
   esac
 done
 
@@ -34,8 +41,11 @@ failures=()
 
 step() { echo -e "${bold}${blue}==> $1${reset}"; }
 info() { echo -e "${dim}$1${reset}"; }
-ok()   { echo -e "${green}$1${reset}"; }
-warn() { echo -e "${yellow}$1${reset}" >&2; failures+=("$1"); }
+ok() { echo -e "${green}$1${reset}"; }
+warn() {
+  echo -e "${yellow}$1${reset}" >&2
+  failures+=("$1")
+}
 
 # Run a command and convert non-zero exit into a warning (not a hard fail).
 # Individual step failures shouldn't abort the whole maintenance run.
@@ -72,9 +82,9 @@ step_claude_code() {
   step "Claude Code"
   local local_ver dist_url remote_ver
   local_ver="$(claude --version 2>/dev/null | awk '{print $1}' || true)"
-  dist_url="$(curl -sI https://claude.ai/install.sh 2>/dev/null \
-    | grep -i '^location:' | tr -d '\r' \
-    | sed 's/^[Ll]ocation: //; s|/bootstrap\.sh$||')"
+  dist_url="$(curl -sI https://claude.ai/install.sh 2>/dev/null |
+    grep -i '^location:' | tr -d '\r' |
+    sed 's/^[Ll]ocation: //; s|/bootstrap\.sh$||')"
   remote_ver="$(curl -sf "$dist_url/latest" 2>/dev/null || true)"
 
   if [[ -z "$remote_ver" ]]; then

@@ -13,6 +13,6 @@ echo
 echo "── Summary ──"
 claude -p --model claude-haiku-4-5 \
   "Summarize this system maintenance run in a few bullets. Call out any failures, warnings, or anything unusual. Be terse." \
-  < "$LOG"
+  <"$LOG"
 
 exit "$status"

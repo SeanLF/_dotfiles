@@ -13,10 +13,10 @@ TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_input.subagent_type // empty')
 
 # Only trigger for review-type agents (empty TOOL_NAME falls through to *)
 case "$TOOL_NAME" in
-  feature-dev:code-reviewer|\
-  pr-review-toolkit:code-reviewer|\
-  pr-review-toolkit:code-simplifier|\
-  superpowers:code-reviewer)
+  feature-dev:code-reviewer | \
+    pr-review-toolkit:code-reviewer | \
+    pr-review-toolkit:code-simplifier | \
+    superpowers:code-reviewer)
     ;;
   *) exit 0 ;;
 esac

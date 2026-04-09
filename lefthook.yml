@@ -8,6 +8,14 @@ pre-commit:
       exclude:
         - "bin/nextdns-configure" # python
       run: mise x -- shellcheck {staged_files}
+    shfmt:
+      glob:
+        - "*.{sh,bash}"
+        - "bin/*"
+        - "setup.sh"
+      exclude:
+        - "bin/nextdns-configure" # python
+      run: mise x -- shfmt -d -i 2 -ci {staged_files}
     ruff:
       glob:
         - "*.py"
@@ -22,3 +30,8 @@ pre-commit:
         - "*.json"
         - "*.{yml,yaml}"
       run: mise x -- prettier --check {staged_files}
+
+pre-push:
+  commands:
+    check:
+      run: mise x -- just check
