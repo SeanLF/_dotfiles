@@ -75,4 +75,3 @@ mas "Consent-O-Matic", id: 1606897889
 mas "Flighty", id: 1358823008
 mas "Little Snitch Mini", id: 1629008763
 mas "WhatsApp", id: 310633997
-uv "thefuck"
