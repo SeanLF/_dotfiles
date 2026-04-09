@@ -4,20 +4,21 @@ Personal macOS dev environment config. One-command setup for a new machine.
 
 ## What's Included
 
-| File | Purpose |
-|------|---------|
-| `Brewfile` | Declarative packages, casks, App Store apps |
-| `.zshrc` | Shell config (fzf history, starship prompt, zoxide) |
-| `aliases.zsh` | Git aliases, docker shortcuts, utilities |
-| `.gitconfig` | Commit signing, delta diffs, sensible defaults |
-| `.config/ghostty/` | Terminal config |
-| `.config/mise/` | Runtime version management (ruby, python, node, terraform) |
-| `.config/starship.toml` | Prompt theme |
-| `.config/zed/` | Zed editor settings |
-| `.claude/` | Claude Code config: CLAUDE.md preferences, hooks, slash commands, writing style |
-| `.ssh/config` | SSH host config |
-| `bin/online` | Wait for network connectivity script |
-| `maintenance.sh` | Update everything: Homebrew, App Store, Claude Code, mise, tldr, Brewfile sync |
+| File                    | Purpose                                                                          |
+| ----------------------- | -------------------------------------------------------------------------------- |
+| `Brewfile`              | Homebrew packages, casks, App Store apps, uv-managed Python CLIs                 |
+| `.config/mise/`         | Runtime + CLI version management (ruby, python, node, most CLIs via aqua)        |
+| `.zshrc`                | Shell config (fzf history, starship prompt, zoxide)                              |
+| `aliases.zsh`           | Git aliases, docker shortcuts, utilities                                         |
+| `.gitconfig`            | Commit signing, delta diffs, sensible defaults                                   |
+| `.config/ghostty/`      | Terminal config                                                                  |
+| `.config/starship.toml` | Prompt theme                                                                     |
+| `.config/zed/`          | Zed editor settings                                                              |
+| `.claude/`              | Claude Code config: CLAUDE.md preferences, hooks, slash commands, writing style  |
+| `.ssh/config`           | SSH host config (1Password agent)                                                |
+| `bin/`                  | Small scripts: `maint`, `online`, `nextdns-configure`, `tailscale-search-domain` |
+| `lefthook.yml`          | Pre-commit hooks: shellcheck, ruff, taplo, prettier                              |
+| `setup.sh`              | Idempotent bootstrap with drift detection                                        |
 
 ## Installation
 
@@ -27,14 +28,15 @@ cd ~/Developer/_dotfiles
 ./setup.sh
 ```
 
-Installs Homebrew (if needed), packages from Brewfile, and symlinks configs.
+Installs Xcode CLI tools, Homebrew, Brewfile packages, mise-managed tools, symlinks configs, and configures DNS. Run `./setup.sh --dry-run` to preview drift without applying changes, or pass a subset of modules (e.g. `./setup.sh symlinks tools`) — see `./setup.sh help`.
 
 **Note:** Some Mac App Store apps may need manual install if not authenticated.
 
 ## Maintenance
 
 ```bash
-./maintenance.sh
+bin/maint           # run upgrades, then summarize with Claude Haiku
+bin/maint --check   # preview outdated packages without upgrading
 ```
 
-Updates Homebrew packages, App Store apps, Claude Code, mise runtimes, tldr pages, re-dumps the Brewfile, and checks for macOS updates.
+Updates Homebrew packages, App Store apps, Claude Code, mise runtimes, uv tools, tldr pages, re-dumps the Brewfile, and checks for macOS updates.

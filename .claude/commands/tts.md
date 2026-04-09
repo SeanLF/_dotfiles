@@ -33,6 +33,7 @@ Generate speech audio using Kokoro MLX. This runs natively on Apple Silicon and 
    - Normalize whitespace
 
 3. **Generate audio** using this command:
+
    ```bash
    cd /tmp && uv run --python 3.12 --with "mlx-audio[tts]" python << 'PYEOF'
    from mlx_audio.tts.generate import load_model, generate_audio

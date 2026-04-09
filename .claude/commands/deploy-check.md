@@ -35,6 +35,7 @@ Run this checklist before deploying. Report findings for each item and only proc
 ## Output
 
 For each section:
+
 - **Status**: pass / warning / fail
 - **Details**: what was checked and what was found
 

@@ -6,5 +6,19 @@ pre-commit:
         - "bin/*"
         - "setup.sh"
       exclude:
-        - "bin/nextdns-configure"  # python
+        - "bin/nextdns-configure" # python
       run: mise x -- shellcheck {staged_files}
+    ruff:
+      glob:
+        - "*.py"
+        - "bin/nextdns-configure"
+      run: mise x -- ruff check {staged_files}
+    taplo:
+      glob: "*.toml"
+      run: mise x -- taplo fmt --check {staged_files}
+    prettier:
+      glob:
+        - "*.md"
+        - "*.json"
+        - "*.{yml,yaml}"
+      run: mise x -- prettier --check {staged_files}

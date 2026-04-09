@@ -62,6 +62,7 @@ Run these reviews in parallel using subagents. Each should produce specific, act
 ## Output
 
 For each review, provide:
+
 1. **Verdict**: ready / needs minor fixes / needs rework
 2. **Issues found** (numbered, specific, with line references)
 3. **Suggested fixes** (exact replacement text where applicable)
