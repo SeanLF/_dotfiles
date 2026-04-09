@@ -1,0 +1,10 @@
+pre-commit:
+  commands:
+    shellcheck:
+      glob:
+        - "*.{sh,bash}"
+        - "bin/*"
+        - "setup.sh"
+      exclude:
+        - "bin/nextdns-configure"  # python
+      run: mise x -- shellcheck {staged_files}

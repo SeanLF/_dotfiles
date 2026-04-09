@@ -26,7 +26,7 @@ symlink_dir() {
   elif [[ -e "$dst" ]]; then
     drift "$dst exists and is not a symlink"
     $DRY_RUN && return 0
-    read -p "  Remove and replace with symlink to $src? [y/N] " response
+    read -rp "  Remove and replace with symlink to $src? [y/N] " response
     [[ ! "$response" =~ ^[Yy]$ ]] && return 0
     rm -rf "$dst" && ln -s "$src" "$dst"
   else
@@ -54,7 +54,7 @@ symlink_with_diff() {
       drift "$dst exists (not a symlink, contents differ)"
       $DRY_RUN && return 0
       diff "$src" "$dst" || true
-      read -p "  Replace with symlink to $src? [y/N] " response
+      read -rp "  Replace with symlink to $src? [y/N] " response
       [[ ! "$response" =~ ^[Yy]$ ]] && return 0
       rm "$dst" && ln -s "$src" "$dst"
     fi
@@ -101,7 +101,7 @@ setup_brew() {
     brew bundle check --file="$DOTFILES_DIR/Brewfile" --verbose 2>&1 | grep -v "^Homebrew Bundle"
     if ! $DRY_RUN; then
       echo ""
-      read -p "Install missing packages? [y/N] " response
+      read -rp "Install missing packages? [y/N] " response
       if [[ "$response" =~ ^[Yy]$ ]]; then
         brew bundle --file="$DOTFILES_DIR/Brewfile" || warn "Some packages failed (mas apps may need manual install)"
       fi
@@ -131,7 +131,7 @@ setup_tools() {
     echo "$missing"
     if ! $DRY_RUN; then
       echo ""
-      read -p "Install missing tools? [y/N] " response
+      read -rp "Install missing tools? [y/N] " response
       if [[ "$response" =~ ^[Yy]$ ]]; then
         mise install || warn "mise install failed"
       fi
@@ -143,7 +143,7 @@ setup_tools() {
     echo "$prunable"
     if ! $DRY_RUN; then
       echo ""
-      read -p "Prune these? [y/N] " response
+      read -rp "Prune these? [y/N] " response
       if [[ "$response" =~ ^[Yy]$ ]]; then
         mise prune --yes || warn "mise prune failed"
       fi
@@ -216,7 +216,7 @@ setup_macos() {
   fi
 
   # Requires bash 4+ for associative arrays
-  local bash_path
+  local bash_path path
   for path in /opt/homebrew/bin/bash /usr/local/bin/bash; do
     [[ -x "$path" ]] && bash_path="$path" && break
   done
@@ -244,7 +244,7 @@ setup_dns() {
     drift "NextDNS profile not configured"
     if ! $DRY_RUN; then
       echo "  Find your profile ID at https://my.nextdns.io (the alphanumeric ID in the URL)"
-      read -p "  NextDNS profile ID: " profile_id
+      read -rp "  NextDNS profile ID: " profile_id
       [[ -z "$profile_id" ]] && error "Profile ID required"
       sudo nextdns config set -profile "$profile_id"
     fi

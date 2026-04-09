@@ -84,7 +84,7 @@ check_defaults() {
     echo "macOS defaults drift detected:"
     printf '  %s\n' "${drifted[@]}"
     echo ""
-    read -p "Apply expected values? [y/N] " response
+    read -rp "Apply expected values? [y/N] " response
     if [[ "$response" =~ ^[Yy]$ ]]; then
       apply_defaults
     fi
