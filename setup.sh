@@ -2,7 +2,24 @@
 set -e
 
 DOTFILES_DIR="$(cd "$(dirname "$0")" && pwd)"
+BACKUP_DIR="$HOME/.dotfiles-backup/$(date +%Y%m%d-%H%M%S)"
 DRY_RUN=false
+
+# Move a pre-existing file/dir out of the way before we clobber it, so the
+# previous contents are always recoverable from ~/.dotfiles-backup/<timestamp>/.
+# All current call sites pass paths under $HOME; guard against anything else
+# escaping the backup root via a leading slash.
+backup() {
+  local path="$1"
+  if [[ "$path" != "$HOME/"* ]]; then
+    error "refusing to backup path outside \$HOME: $path"
+  fi
+  local rel="${path#"$HOME"/}"
+  local dest="$BACKUP_DIR/$rel"
+  mkdir -p "$(dirname "$dest")"
+  mv "$path" "$dest"
+  info "  backed up to $dest"
+}
 
 # Default module order — also what `all` runs. `macos` is opt-in only.
 DEFAULT_MODULES=(core brew symlinks tools ssh dns)
@@ -26,9 +43,9 @@ symlink_dir() {
   elif [[ -e "$dst" ]]; then
     drift "$dst exists and is not a symlink"
     $DRY_RUN && return 0
-    read -rp "  Remove and replace with symlink to $src? [y/N] " response
+    read -rp "  Back up and replace with symlink to $src? [y/N] " response
     [[ ! "$response" =~ ^[Yy]$ ]] && return 0
-    rm -rf "$dst" && ln -s "$src" "$dst"
+    backup "$dst" && ln -s "$src" "$dst"
   else
     drift "$dst missing"
     $DRY_RUN && return 0
@@ -49,14 +66,14 @@ symlink_with_diff() {
     if diff -q "$src" "$dst" &>/dev/null; then
       drift "$dst exists (not a symlink, contents identical)"
       $DRY_RUN && return 0
-      rm "$dst" && ln -s "$src" "$dst"
+      backup "$dst" && ln -s "$src" "$dst"
     else
       drift "$dst exists (not a symlink, contents differ)"
       $DRY_RUN && return 0
       diff "$src" "$dst" || true
-      read -rp "  Replace with symlink to $src? [y/N] " response
+      read -rp "  Back up and replace with symlink to $src? [y/N] " response
       [[ ! "$response" =~ ^[Yy]$ ]] && return 0
-      rm "$dst" && ln -s "$src" "$dst"
+      backup "$dst" && ln -s "$src" "$dst"
     fi
   else
     drift "$dst missing"

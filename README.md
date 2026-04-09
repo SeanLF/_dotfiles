@@ -1,6 +1,6 @@
 # Dotfiles
 
-Personal macOS dev environment config. One-command setup for a new machine.
+Personal macOS dev environment config. One-command setup for a new machine. **macOS only** — uses Homebrew, `launchctl`, `softwareupdate`, and macOS `defaults`; no Linux/WSL support.
 
 ## What's Included
 
@@ -17,8 +17,10 @@ Personal macOS dev environment config. One-command setup for a new machine.
 | `.claude/`              | Claude Code config: CLAUDE.md preferences, hooks, slash commands, writing style  |
 | `.ssh/config`           | SSH host config (1Password agent)                                                |
 | `bin/`                  | Small scripts: `maint`, `online`, `nextdns-configure`, `tailscale-search-domain` |
+| `raycast-scripts/`      | Raycast script commands (toggle/fix NextDNS) — point Raycast at this directory   |
 | `lefthook.yml`          | Pre-commit hooks: shellcheck, ruff, taplo, prettier                              |
-| `setup.sh`              | Idempotent bootstrap with drift detection                                        |
+| `.editorconfig`         | Shared editor conventions (indentation, line endings, trailing whitespace)       |
+| `setup.sh`              | Idempotent bootstrap with drift detection; backs up clobbered files              |
 
 ## Installation
 
@@ -30,7 +32,7 @@ cd ~/Developer/_dotfiles
 
 Installs Xcode CLI tools, Homebrew, Brewfile packages, mise-managed tools, symlinks configs, and configures DNS. Run `./setup.sh --dry-run` to preview drift without applying changes, or pass a subset of modules (e.g. `./setup.sh symlinks tools`) — see `./setup.sh help`.
 
-**Note:** Some Mac App Store apps may need manual install if not authenticated.
+**Note:** Some Mac App Store apps may need manual install if not authenticated. If `setup.sh` finds pre-existing files where symlinks should go, it backs them up to `~/.dotfiles-backup/<timestamp>/` before replacing them.
 
 ## Maintenance
 

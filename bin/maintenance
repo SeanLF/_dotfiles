@@ -28,14 +28,116 @@ else
   bold='' dim='' red='' green='' yellow='' blue='' reset=''
 fi
 
+DOTFILES_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+BREWFILE="$DOTFILES_DIR/Brewfile"
+failures=()
+
 step() { echo -e "${bold}${blue}==> $1${reset}"; }
 info() { echo -e "${dim}$1${reset}"; }
 ok()   { echo -e "${green}$1${reset}"; }
 warn() { echo -e "${yellow}$1${reset}" >&2; failures+=("$1"); }
 
-DOTFILES_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-BREWFILE="$DOTFILES_DIR/Brewfile"
-failures=()
+# Run a command and convert non-zero exit into a warning (not a hard fail).
+# Individual step failures shouldn't abort the whole maintenance run.
+try() { "$@" || warn "$* failed"; }
+
+step_homebrew() {
+  step "Homebrew"
+  try brew update
+  if $CHECK_ONLY; then
+    brew outdated || true
+    brew outdated --cask --greedy-auto-updates || true
+  else
+    try brew upgrade
+    try brew upgrade --cask
+    try brew autoremove
+    try brew cleanup
+  fi
+}
+
+step_appstore() {
+  step "App Store"
+  if $CHECK_ONLY; then
+    mas outdated || true
+  else
+    try mas upgrade
+  fi
+}
+
+# Workaround: `claude update` downloads the full binary (~200MB) even when
+# already up-to-date. Compare versions first to skip the download.
+# Claude Code also auto-upgrades while running; this just prefetches before
+# the next session starts. https://github.com/anthropics/claude-code/issues/20808
+step_claude_code() {
+  step "Claude Code"
+  local local_ver dist_url remote_ver
+  local_ver="$(claude --version 2>/dev/null | awk '{print $1}' || true)"
+  dist_url="$(curl -sI https://claude.ai/install.sh 2>/dev/null \
+    | grep -i '^location:' | tr -d '\r' \
+    | sed 's/^[Ll]ocation: //; s|/bootstrap\.sh$||')"
+  remote_ver="$(curl -sf "$dist_url/latest" 2>/dev/null || true)"
+
+  if [[ -z "$remote_ver" ]]; then
+    warn "could not check latest Claude Code version"
+    $CHECK_ONLY || try claude update
+  elif [[ "$local_ver" == "$remote_ver" ]]; then
+    ok "Claude Code is already up to date ($local_ver)"
+  else
+    info "Claude Code $local_ver -> $remote_ver"
+    $CHECK_ONLY || try claude update
+  fi
+}
+
+# NextDNS is installed via Homebrew, so `brew upgrade` above already handles it.
+# The CLI's own `nextdns upgrade` subcommand can't overwrite a brew-managed
+# binary ("Cannot detect running environment") — brew owns the install path.
+
+step_mise() {
+  step "mise"
+  # Scope GITHUB_TOKEN to just this step so it doesn't leak to other tools.
+  # Without it, mise's "latest" resolution hits unauthenticated rate limits.
+  local gh_token=""
+  if command -v gh &>/dev/null && gh auth status &>/dev/null; then
+    gh_token="$(gh auth token)"
+  fi
+  if $CHECK_ONLY; then
+    GITHUB_TOKEN="$gh_token" mise outdated || true
+  else
+    GITHUB_TOKEN="$gh_token" try mise upgrade
+    try mise prune --yes
+  fi
+}
+
+step_uv() {
+  step "uv tools"
+  if $CHECK_ONLY; then
+    uv tool list --outdated 2>/dev/null || uv tool list || true
+  else
+    try uv tool upgrade --all
+  fi
+}
+
+step_tldr() {
+  step "tldr"
+  $CHECK_ONLY || try tldr --update
+}
+
+step_brewfile() {
+  step "Brewfile"
+  if $CHECK_ONLY; then
+    info "(skipped in --check mode)"
+  elif [[ -f "$BREWFILE" ]]; then
+    try brew bundle dump --file="$BREWFILE" --force --describe
+    ok "Brewfile updated"
+  else
+    warn "Brewfile not found at $BREWFILE"
+  fi
+}
+
+step_macos() {
+  step "macOS updates"
+  softwareupdate --list 2>&1 | grep -v "^Software Update Tool" || true
+}
 
 # Bail early if offline
 if ! online -q 5; then
@@ -43,94 +145,14 @@ if ! online -q 5; then
   exit 1
 fi
 
-step "Homebrew"
-brew update || warn "brew update failed"
-if $CHECK_ONLY; then
-  brew outdated || true
-  brew outdated --cask --greedy-auto-updates || true
-else
-  brew upgrade || warn "brew upgrade failed"
-  brew upgrade --cask || warn "brew upgrade --cask failed"
-  brew autoremove || warn "brew autoremove failed"
-  brew cleanup || warn "brew cleanup failed"
-fi
-
-step "App Store"
-if $CHECK_ONLY; then
-  mas outdated || true
-else
-  mas upgrade || warn "mas upgrade failed (may need App Store login)"
-fi
-
-# Workaround: claude update downloads the full binary (~200MB) even when
-# already up-to-date. Check versions first to skip the download.
-# (Claude Code also auto-upgrades while running; this just prefetches before
-# the next session starts.)
-# https://github.com/anthropics/claude-code/issues/20808
-step "Claude Code"
-local_ver="$(claude --version 2>/dev/null | awk '{print $1}' || true)"
-dist_url="$(curl -sI https://claude.ai/install.sh 2>/dev/null \
-  | grep -i '^location:' | tr -d '\r' \
-  | sed 's/^[Ll]ocation: //; s|/bootstrap\.sh$||')"
-remote_ver="$(curl -sf "$dist_url/latest" 2>/dev/null || true)"
-if [[ -z "$remote_ver" ]]; then
-  if $CHECK_ONLY; then
-    warn "could not check latest Claude Code version"
-  else
-    warn "could not check latest Claude Code version, running claude update"
-    claude update || warn "claude update failed"
-  fi
-elif [[ "$local_ver" == "$remote_ver" ]]; then
-  ok "Claude Code is already up to date ($local_ver)"
-else
-  info "Claude Code $local_ver -> $remote_ver"
-  if ! $CHECK_ONLY; then
-    claude update || warn "claude update failed"
-  fi
-fi
-unset local_ver dist_url remote_ver
-
-# NextDNS is installed via Homebrew, so `brew upgrade` above already handles it.
-# The CLI's own `nextdns upgrade` subcommand can't overwrite a brew-managed
-# binary ("Cannot detect running environment") — brew owns the install path.
-
-step "mise"
-# Scope GITHUB_TOKEN to just this step so it doesn't leak to other tools.
-# Without it, mise's "latest" resolution hits unauthenticated GitHub rate limits.
-gh_token=""
-if command -v gh &>/dev/null && gh auth status &>/dev/null; then
-  gh_token="$(gh auth token)"
-fi
-if $CHECK_ONLY; then
-  GITHUB_TOKEN="$gh_token" mise outdated || true
-else
-  GITHUB_TOKEN="$gh_token" mise upgrade || warn "mise upgrade failed"
-  mise prune --yes || warn "mise prune failed"
-fi
-unset gh_token
-
-step "uv tools"
-if $CHECK_ONLY; then
-  uv tool list --outdated 2>/dev/null || uv tool list || true
-else
-  uv tool upgrade --all || warn "uv tool upgrade failed"
-fi
-
-step "tldr"
-$CHECK_ONLY || tldr --update || warn "tldr --update failed"
-
-step "Brewfile"
-if $CHECK_ONLY; then
-  info "(skipped in --check mode)"
-elif [[ -f "$BREWFILE" ]]; then
-  brew bundle dump --file="$BREWFILE" --force --describe || warn "brew bundle dump failed"
-  ok "Brewfile updated"
-else
-  warn "Brewfile not found at $BREWFILE"
-fi
-
-step "macOS updates"
-softwareupdate --list 2>&1 | grep -v "^Software Update Tool" || true
+step_homebrew
+step_appstore
+step_claude_code
+step_mise
+step_uv
+step_tldr
+step_brewfile
+step_macos
 
 echo ""
 if [[ ${#failures[@]} -gt 0 ]]; then
