@@ -34,10 +34,14 @@ export PATH="$HOME/.local/bin:$PATH"
 # Aliases
 [[ -f ~/.aliases.zsh ]] && source ~/.aliases.zsh
 
-# Tool initialization
+# Tool initialization.
+# mise must activate BEFORE starship/zoxide because both are mise-managed
+# (aqua:starship/starship, aqua:ajeetdsouza/zoxide) — until mise injects its
+# shim directory into PATH, `command -v starship` silently fails and the
+# prompt falls back to bare zsh until the next shell.
+command -v mise &>/dev/null && eval "$(mise activate zsh)"
 command -v starship &>/dev/null && eval "$(starship init zsh)"
 command -v zoxide &>/dev/null && eval "$(zoxide init zsh)"
-command -v mise &>/dev/null && eval "$(mise activate zsh)"
 
 # Environment files
 [[ -f "$HOME/.local/bin/env" ]] && . "$HOME/.local/bin/env"
