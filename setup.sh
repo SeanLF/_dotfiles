@@ -28,7 +28,10 @@ DEFAULT_MODULES=(core brew symlinks tools ssh dns)
 info() { echo "$1"; }
 drift() { if $DRY_RUN; then echo "DRIFT: $1"; else echo "FIXING: $1"; fi; }
 warn() { echo "WARNING: $1" >&2; }
-error() { echo "ERROR: $1" >&2; exit 1; }
+error() {
+  echo "ERROR: $1" >&2
+  exit 1
+}
 
 # Symlink a directory, replacing any pre-existing non-symlink after confirmation.
 # Used for directories where we can't diff contents (e.g. ~/.claude/commands).
@@ -172,10 +175,10 @@ setup_tools() {
 setup_symlinks() {
   # Create config directories
   mkdir -p "$HOME/.config/ghostty" "$HOME/.config/mise" "$HOME/.config/zed" \
-           "$HOME/.local/bin" "$HOME/.claude" "$HOME/.ssh" "$HOME/.playwright" "$HOME/Developer"
+    "$HOME/.local/bin" "$HOME/.claude" "$HOME/.ssh" "$HOME/.playwright" "$HOME/Developer"
 
   # Symlink scripts from bin/
-  if compgen -G "$DOTFILES_DIR/bin/*" > /dev/null; then
+  if compgen -G "$DOTFILES_DIR/bin/*" >/dev/null; then
     for script in "$DOTFILES_DIR"/bin/*; do
       symlink_with_diff "$script" "$HOME/.local/bin/$(basename "$script")"
     done
@@ -291,12 +294,23 @@ setup_dns() {
   local sudoers="/etc/sudoers.d/nextdns"
   local sudoers_line="$USER ALL=(ALL) NOPASSWD: /opt/homebrew/bin/nextdns activate, /opt/homebrew/bin/nextdns deactivate, /opt/homebrew/bin/nextdns restart, /opt/homebrew/bin/nextdns status, $DOTFILES_DIR/bin/tailscale-search-domain, /usr/bin/dscacheutil -flushcache, /usr/bin/killall -HUP mDNSResponder"
 
-  if [[ ! -f "$sudoers" ]] || [[ "$(sudo cat "$sudoers")" != "$sudoers_line" ]]; then
+  # Sudoers file is root-owned 0440, so reading it for content comparison needs
+  # sudo. Dry-runs must never prompt for a password (would deadlock in pre-push
+  # hooks with no TTY), so probe with `sudo -n` first: if creds are cached we
+  # still catch content drift, otherwise we fall back to a soft report.
+  write_sudoers() {
+    echo "$sudoers_line" | sudo tee "$sudoers" >/dev/null
+    sudo chmod 0440 "$sudoers"
+  }
+
+  if [[ ! -f "$sudoers" ]]; then
     drift "NextDNS sudoers not configured (passwordless commands)"
-    if ! $DRY_RUN; then
-      echo "$sudoers_line" | sudo tee "$sudoers" >/dev/null
-      sudo chmod 0440 "$sudoers"
-    fi
+    $DRY_RUN || write_sudoers
+  elif $DRY_RUN && ! sudo -n true 2>/dev/null; then
+    info "NextDNS sudoers: exists (content not verified — no cached sudo)"
+  elif [[ "$(sudo cat "$sudoers")" != "$sudoers_line" ]]; then
+    drift "NextDNS sudoers content out of date"
+    $DRY_RUN || write_sudoers
   fi
 
   # Tailscale search domain launchd plist (copy, not symlink -- launchd requirement)
@@ -353,7 +367,7 @@ main() {
   for arg in "$@"; do
     case "$arg" in
       --dry-run) DRY_RUN=true ;;
-      *)         modules+=("$arg") ;;
+      *) modules+=("$arg") ;;
     esac
   done
 
@@ -366,15 +380,18 @@ main() {
 
   for module in "${modules[@]}"; do
     case "$module" in
-      core)     setup_core ;;
-      brew)     setup_brew ;;
-      tools)    setup_tools ;;
+      core) setup_core ;;
+      brew) setup_brew ;;
+      tools) setup_tools ;;
       symlinks) setup_symlinks ;;
-      ssh)      setup_ssh ;;
-      dns)      setup_dns ;;
-      macos)    setup_macos ;;
-      help|-h|--help) show_help; exit 0 ;;
-      *)        error "Unknown module: $module. Run './setup.sh help' for usage." ;;
+      ssh) setup_ssh ;;
+      dns) setup_dns ;;
+      macos) setup_macos ;;
+      help | -h | --help)
+        show_help
+        exit 0
+        ;;
+      *) error "Unknown module: $module. Run './setup.sh help' for usage." ;;
     esac
   done
 
