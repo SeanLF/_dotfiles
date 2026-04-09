@@ -83,6 +83,21 @@ setup_brew() {
   fi
 }
 
+# Module: mise-managed runtimes and CLIs
+# Language runtimes and most GitHub-released CLIs live in .config/mise/config.toml.
+# Python-based CLIs (e.g. thefuck) are tracked in the Brewfile as `uv "..."` entries
+# and installed by `brew bundle` — so setup_brew handles those.
+setup_tools() {
+  if ! command -v mise &>/dev/null; then
+    error "mise not installed. Run: ./setup.sh brew"
+  fi
+  if $DRY_RUN; then
+    info "mise install (dry-run)"
+    return
+  fi
+  mise install || warn "mise install failed"
+}
+
 # Module: Symlinks
 setup_symlinks() {
   # Create config directories
@@ -265,6 +280,7 @@ Flags:
 Modules:
   core      Install Xcode CLI tools and Homebrew
   brew      Install packages from Brewfile (with drift detection)
+  tools     Install mise-managed runtimes/CLIs and uv-managed Python tools
   symlinks  Create dotfile symlinks (with drift detection)
   ssh       Verify 1Password SSH agent
   dns       NextDNS sudoers + Tailscale search domain plist
@@ -295,18 +311,19 @@ main() {
 
   # Default to all if no modules
   if [[ ${#modules[@]} -eq 0 ]]; then
-    modules=(core brew symlinks ssh dns)
+    modules=(core brew symlinks tools ssh dns)
   fi
 
   for module in "${modules[@]}"; do
     case "$module" in
       core)     setup_core ;;
       brew)     setup_brew ;;
+      tools)    setup_tools ;;
       symlinks) setup_symlinks ;;
       ssh)      setup_ssh ;;
       dns)      setup_dns ;;
       macos)    setup_macos ;;
-      all)      setup_core; setup_brew; setup_symlinks; setup_ssh; setup_dns ;;
+      all)      setup_core; setup_brew; setup_symlinks; setup_tools; setup_ssh; setup_dns ;;
       help|-h|--help) show_help; exit 0 ;;
       *)        error "Unknown module: $module. Run './setup.sh help' for usage." ;;
     esac

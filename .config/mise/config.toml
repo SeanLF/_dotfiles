@@ -1,10 +1,32 @@
 [tools]
+# Language runtimes
 ruby = "latest"
 uv = "latest"
 python = "latest"
 node = "latest"
 terraform = "latest"
 rust = "latest"
+
+# CLIs (migrated from Homebrew — aqua backend where available, github fallback)
+"aqua:sharkdp/bat" = "latest"
+# btop stays on Homebrew — upstream only ships Linux binaries, brew builds from source
+"aqua:bootandy/dust" = "latest"
+# eza stays on Homebrew — upstream only ships Linux/Windows binaries
+"aqua:sharkdp/fd" = "latest"
+"aqua:cli/cli" = "latest"              # gh
+"aqua:dandavison/delta" = "latest"     # git-delta
+"aqua:PaulJuliusMartinez/jless" = "latest"
+"aqua:jqlang/jq" = "latest"
+"aqua:jesseduffield/lazygit" = "latest"
+"aqua:evilmartians/lefthook" = "latest"
+"aqua:BurntSushi/ripgrep" = "latest"
+"aqua:starship/starship" = "latest"
+"aqua:tldr-pages/tlrc" = "latest"
+"aqua:ajeetdsouza/zoxide" = "latest"
+# mas stays on Homebrew — `brew bundle dump` uses it to enumerate App Store apps
+"github:rtk-ai/rtk" = "latest"
+"github:AlexsJones/llmfit" = "latest"
+"github:spinel-coop/rv" = "latest"
 
 [settings]
 idiomatic_version_file_enable_tools = ["ruby"]

@@ -4,48 +4,28 @@ tap "teamookla/speedtest"
 brew "readline"
 # Bourne-Again SHell, a UNIX command interpreter
 brew "bash"
-# Clone of cat(1) with syntax highlighting and Git integration
-brew "bat"
 # Resource monitor. C++ version and continuation of bashtop and bpytop
 brew "btop"
 # Get a file from an HTTP, HTTPS or FTP server
 brew "curl"
-# More intuitive version of du in rust
-brew "dust"
 # Modern, maintained replacement for ls
 brew "eza"
-# Simple, fast and user-friendly alternative to find
-brew "fd"
 # Command-line fuzzy finder written in Go
 brew "fzf"
 # GNU awk utility
 brew "gawk"
-# GitHub command-line tool
-brew "gh"
 # Distributed revision control system
 brew "git"
-# Syntax-highlighting pager for git and diff output
-brew "git-delta"
 # GNU Privacy Guard (OpenPGP)
 brew "gnupg"
 # HTTP load generator, ApacheBench (ab) replacement
 brew "hey"
 # Command-line tool to export and inspect local iMessage database
 brew "imessage-exporter"
-# Command-line pager for JSON data
-brew "jless"
-# Lightweight and flexible command-line JSON processor
-brew "jq"
-# Simple terminal UI for git commands
-brew "lazygit"
-# Fast and powerful Git hooks manager for any type of projects
-brew "lefthook"
 # Pager program similar to more
 brew "less"
 # YAML Parser
 brew "libyaml"
-# Find what models run on your hardware
-brew "llmfit"
 # Mac App Store command-line interface
 brew "mas"
 # Polyglot runtime manager (asdf rust clone)
@@ -56,22 +36,8 @@ brew "nbping"
 brew "nextdns"
 # Highly capable, feature-rich programming language
 brew "perl"
-# Search tool like grep and The Silver Searcher
-brew "ripgrep"
-# CLI proxy to minimize LLM token consumption
-brew "rtk"
-# Ruby version manager
-brew "rv"
-# Cross-shell prompt for astronauts
-brew "starship"
-# Programmatically correct mistyped console commands
-brew "thefuck"
-# Official tldr client written in Rust
-brew "tlrc"
 # Vi 'workalike' with many additional features
 brew "vim"
-# Shell extension to navigate your filesystem faster
-brew "zoxide"
 # Fish-like fast/unobtrusive autosuggestions for zsh
 brew "zsh-autosuggestions"
 # Fish shell like syntax highlighting for zsh
@@ -109,3 +75,4 @@ mas "Consent-O-Matic", id: 1606897889
 mas "Flighty", id: 1358823008
 mas "Little Snitch Mini", id: 1629008763
 mas "WhatsApp", id: 310633997
+uv "thefuck"

@@ -2,6 +2,14 @@
 # System maintenance — run periodically to keep packages updated
 set -e
 
+# Activate mise so tools it manages (tldr, gh, etc.) are on PATH for this script.
+# Maintenance runs non-interactively, so mise's shell prompt hooks don't fire;
+# `mise env` emits the equivalent exports directly. Guarded so a mise hiccup
+# doesn't abort the whole run under `set -e`.
+if command -v mise &>/dev/null; then
+  eval "$(mise env -s bash 2>/dev/null)" || true
+fi
+
 if [[ -t 1 ]]; then
   bold='\033[1m' dim='\033[2m'
   red='\033[31m' green='\033[32m' yellow='\033[33m' blue='\033[34m'
@@ -68,7 +76,16 @@ fi
 unset ndns_out
 
 step "mise"
-mise upgrade || warn "mise upgrade failed"
+# Scope GITHUB_TOKEN to just `mise upgrade` so it doesn't leak to other steps.
+# Without it, mise's "latest" resolution hits unauthenticated GitHub rate limits.
+if command -v gh &>/dev/null && gh auth status &>/dev/null; then
+  GITHUB_TOKEN="$(gh auth token)" mise upgrade || warn "mise upgrade failed"
+else
+  mise upgrade || warn "mise upgrade failed"
+fi
+
+step "uv tools"
+uv tool upgrade --all || warn "uv tool upgrade failed"
 
 step "tldr"
 tldr --update || warn "tldr --update failed"
