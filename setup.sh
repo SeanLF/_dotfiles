@@ -4,11 +4,37 @@ set -e
 DOTFILES_DIR="$(cd "$(dirname "$0")" && pwd)"
 DRY_RUN=false
 
+# Default module order — also what `all` runs. `macos` is opt-in only.
+DEFAULT_MODULES=(core brew symlinks tools ssh dns)
+
 # Silent success, loud failure
 info() { echo "$1"; }
 drift() { if $DRY_RUN; then echo "DRIFT: $1"; else echo "FIXING: $1"; fi; }
 warn() { echo "WARNING: $1" >&2; }
 error() { echo "ERROR: $1" >&2; exit 1; }
+
+# Symlink a directory, replacing any pre-existing non-symlink after confirmation.
+# Used for directories where we can't diff contents (e.g. ~/.claude/commands).
+symlink_dir() {
+  local src="$1" dst="$2"
+
+  if [[ -L "$dst" ]]; then
+    [[ "$(readlink "$dst")" == "$src" ]] && return 0
+    drift "$dst -> wrong target ($(readlink "$dst"), expected $src)"
+    $DRY_RUN && return 0
+    ln -sfn "$src" "$dst"
+  elif [[ -e "$dst" ]]; then
+    drift "$dst exists and is not a symlink"
+    $DRY_RUN && return 0
+    read -p "  Remove and replace with symlink to $src? [y/N] " response
+    [[ ! "$response" =~ ^[Yy]$ ]] && return 0
+    rm -rf "$dst" && ln -s "$src" "$dst"
+  else
+    drift "$dst missing"
+    $DRY_RUN && return 0
+    ln -s "$src" "$dst"
+  fi
+}
 
 # Symlink with drift detection
 symlink_with_diff() {
@@ -155,29 +181,9 @@ setup_symlinks() {
     symlink_with_diff "$DOTFILES_DIR/.ssh/config" "$HOME/.ssh/config"
   fi
 
-  # Claude commands directory (remove existing, then symlink)
-  if [[ -e "$HOME/.claude/commands" && ! -L "$HOME/.claude/commands" ]]; then
-    warn "~/.claude/commands exists and is not a symlink"
-    read -p "Remove and replace with symlink? [y/N] " response
-    if [[ "$response" =~ ^[Yy]$ ]]; then
-      rm -rf "$HOME/.claude/commands"
-      ln -s "$DOTFILES_DIR/.claude/commands" "$HOME/.claude/commands"
-    fi
-  elif [[ ! -e "$HOME/.claude/commands" ]]; then
-    ln -s "$DOTFILES_DIR/.claude/commands" "$HOME/.claude/commands"
-  fi
-
-  # Claude hooks directory (remove existing, then symlink)
-  if [[ -e "$HOME/.claude/hooks" && ! -L "$HOME/.claude/hooks" ]]; then
-    warn "~/.claude/hooks exists and is not a symlink"
-    read -p "Remove and replace with symlink? [y/N] " response
-    if [[ "$response" =~ ^[Yy]$ ]]; then
-      rm -rf "$HOME/.claude/hooks"
-      ln -s "$DOTFILES_DIR/.claude/hooks" "$HOME/.claude/hooks"
-    fi
-  elif [[ ! -e "$HOME/.claude/hooks" ]]; then
-    ln -s "$DOTFILES_DIR/.claude/hooks" "$HOME/.claude/hooks"
-  fi
+  # Claude commands and hooks directories (can't diff contents, so replace wholesale)
+  symlink_dir "$DOTFILES_DIR/.claude/commands" "$HOME/.claude/commands"
+  symlink_dir "$DOTFILES_DIR/.claude/hooks" "$HOME/.claude/hooks"
 
   info "Symlinks: done"
 }
@@ -336,9 +342,9 @@ main() {
 
   $DRY_RUN && info "=== DRY RUN (no changes) ==="
 
-  # Default to all if no modules
-  if [[ ${#modules[@]} -eq 0 ]]; then
-    modules=(core brew symlinks tools ssh dns)
+  # No args or `all` → run the canonical default list
+  if [[ ${#modules[@]} -eq 0 ]] || [[ " ${modules[*]} " == *" all "* ]]; then
+    modules=("${DEFAULT_MODULES[@]}")
   fi
 
   for module in "${modules[@]}"; do
@@ -350,7 +356,6 @@ main() {
       ssh)      setup_ssh ;;
       dns)      setup_dns ;;
       macos)    setup_macos ;;
-      all)      setup_core; setup_brew; setup_symlinks; setup_tools; setup_ssh; setup_dns ;;
       help|-h|--help) show_help; exit 0 ;;
       *)        error "Unknown module: $module. Run './setup.sh help' for usage." ;;
     esac
