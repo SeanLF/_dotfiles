@@ -193,10 +193,10 @@ setup_symlinks() {
   symlink_with_diff "$DOTFILES_DIR/.claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
   symlink_with_diff "$DOTFILES_DIR/.playwright/cli.config.json" "$HOME/.playwright/cli.config.json"
 
-  # SSH config (1Password agent)
-  if [[ -f "$DOTFILES_DIR/.ssh/config" ]]; then
-    symlink_with_diff "$DOTFILES_DIR/.ssh/config" "$HOME/.ssh/config"
-  fi
+  # SSH config (1Password agent) and allowed signers (ssh-based commit signing)
+  for f in config allowed_signers; do
+    symlink_with_diff "$DOTFILES_DIR/.ssh/$f" "$HOME/.ssh/$f"
+  done
 
   # Claude commands and hooks directories (can't diff contents, so replace wholesale)
   symlink_dir "$DOTFILES_DIR/.claude/commands" "$HOME/.claude/commands"
