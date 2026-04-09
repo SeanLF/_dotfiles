@@ -91,11 +91,38 @@ setup_tools() {
   if ! command -v mise &>/dev/null; then
     error "mise not installed. Run: ./setup.sh brew"
   fi
-  if $DRY_RUN; then
-    info "mise install (dry-run)"
-    return
+
+  local missing prunable
+  missing=$(mise ls --missing) || error "mise ls --missing failed — check mise status"
+  prunable=$(mise ls --prunable) || error "mise ls --prunable failed — check mise status"
+
+  if [[ -z "$missing" && -z "$prunable" ]]; then
+    info "mise: no drift"
   fi
-  mise install || warn "mise install failed"
+
+  if [[ -n "$missing" ]]; then
+    drift "mise has missing tools:"
+    echo "$missing"
+    if ! $DRY_RUN; then
+      echo ""
+      read -p "Install missing tools? [y/N] " response
+      if [[ "$response" =~ ^[Yy]$ ]]; then
+        mise install || warn "mise install failed"
+      fi
+    fi
+  fi
+
+  if [[ -n "$prunable" ]]; then
+    drift "mise has tools not in config (prunable):"
+    echo "$prunable"
+    if ! $DRY_RUN; then
+      echo ""
+      read -p "Prune these? [y/N] " response
+      if [[ "$response" =~ ^[Yy]$ ]]; then
+        mise prune --yes || warn "mise prune failed"
+      fi
+    fi
+  fi
 }
 
 # Module: Symlinks
