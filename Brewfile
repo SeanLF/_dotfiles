@@ -8,16 +8,24 @@ brew "bash"
 brew "btop"
 # Get a file from an HTTP, HTTPS or FTP server
 brew "curl"
+# File comparison utilities
+brew "diffutils"
 # Modern, maintained replacement for ls
 brew "eza"
+# Collection of GNU find, xargs, and locate
+brew "findutils"
 # Command-line fuzzy finder written in Go
 brew "fzf"
 # GNU awk utility
 brew "gawk"
 # Distributed revision control system
 brew "git"
+# GNU implementation of the famous stream editor
+brew "gnu-sed"
 # GNU Privacy Guard (OpenPGP)
 brew "gnupg"
+# GNU grep, egrep and fgrep
+brew "grep"
 # HTTP load generator, ApacheBench (ab) replacement
 brew "hey"
 # Command-line tool to export and inspect local iMessage database
@@ -26,6 +34,8 @@ brew "imessage-exporter"
 brew "less"
 # YAML Parser
 brew "libyaml"
+# Utility for directing compilation
+brew "make"
 # Mac App Store command-line interface
 brew "mas"
 # Polyglot runtime manager (asdf rust clone)
@@ -75,3 +85,4 @@ mas "Consent-O-Matic", id: 1606897889
 mas "Flighty", id: 1358823008
 mas "Little Snitch Mini", id: 1629008763
 mas "WhatsApp", id: 310633997
+mas "Xcode", id: 497799835
