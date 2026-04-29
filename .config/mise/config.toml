@@ -26,9 +26,12 @@ rust = "latest"
 "aqua:astral-sh/ruff" = "latest"
 "aqua:tamasfe/taplo" = "latest"
 "npm:prettier" = "latest"
+"aqua:openai/codex" = "latest"             # codex — native Rust binary
+"npm:@google/gemini-cli" = "latest"        # gemini — Node-only, no binary release
 "aqua:starship/starship" = "latest"
 "aqua:tldr-pages/tlrc" = "latest"
 "aqua:ajeetdsouza/zoxide" = "latest"
+"github:Arthur-Ficial/apfel" = "latest"
 # mas stays on Homebrew — `brew bundle dump` uses it to enumerate App Store apps
 "github:rtk-ai/rtk" = "latest"
 "github:AlexsJones/llmfit" = "latest"

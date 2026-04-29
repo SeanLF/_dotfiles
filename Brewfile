@@ -46,6 +46,8 @@ brew "nbping"
 brew "nextdns"
 # Highly capable, feature-rich programming language
 brew "perl"
+# Compressed read-only file system for Linux
+brew "squashfs"
 # Vi 'workalike' with many additional features
 brew "vim"
 # Fish-like fast/unobtrusive autosuggestions for zsh
@@ -84,5 +86,7 @@ mas "1Password for Safari", id: 1569813296
 mas "Consent-O-Matic", id: 1606897889
 mas "Flighty", id: 1358823008
 mas "Little Snitch Mini", id: 1629008763
+mas "TestFlight", id: 899247664
 mas "WhatsApp", id: 310633997
 mas "Xcode", id: 497799835
+uv "osxphotos"

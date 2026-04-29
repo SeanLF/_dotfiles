@@ -127,6 +127,39 @@ step_uv() {
   fi
 }
 
+# Default gems shipped with mise-managed Ruby drift behind upstream and
+# aren't refreshed by `mise upgrade`.
+step_gems() {
+  step "Ruby gems"
+  command -v gem &>/dev/null || {
+    info "gem not found, skipping"
+    return
+  }
+  if $CHECK_ONLY; then
+    gem outdated || true
+  else
+    try gem update
+  fi
+}
+
+# rustup is bootstrapped manually (not via brew or mise). mise's `rust` plugin
+# delegates to rustup, so `mise upgrade` installs the latest stable toolchain
+# through rustup, but rustup itself, its other toolchains, and stale
+# components only refresh via `rustup self update` / `rustup update`.
+step_rustup() {
+  step "rustup"
+  command -v rustup &>/dev/null || {
+    info "rustup not installed, skipping"
+    return
+  }
+  if $CHECK_ONLY; then
+    rustup check || true
+  else
+    try rustup self update
+    try rustup update
+  fi
+}
+
 step_tldr() {
   step "tldr"
   $CHECK_ONLY || try tldr --update
@@ -159,6 +192,8 @@ step_homebrew
 step_appstore
 step_claude_code
 step_mise
+step_gems
+step_rustup
 step_uv
 step_tldr
 step_brewfile
