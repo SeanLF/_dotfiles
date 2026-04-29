@@ -116,6 +116,7 @@ When the mode isn't obvious, ask. A one-word answer saves us both time.
 ## Paths
 
 - Projects: `~/Developer/`, experiments: `~/Developer/_experiments/`
+- Voice and style (all output, not just blog): read `~/Developer/_dotfiles/writing-style.md`
 
 ## Working files
 

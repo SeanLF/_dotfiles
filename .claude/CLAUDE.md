@@ -15,5 +15,4 @@
 
 ## Paths
 
-- Voice and style (all output, not just blog): read `~/.claude/writing-style.md`
-- `.claude/` is reserved for agents, skills, settings -- not working docs.
+- `.claude/` is reserved for agents, skills, settings; not working docs.
