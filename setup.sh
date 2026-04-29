@@ -175,7 +175,8 @@ setup_tools() {
 setup_symlinks() {
   # Create config directories
   mkdir -p "$HOME/.config/ghostty" "$HOME/.config/mise" "$HOME/.config/zed" \
-    "$HOME/.local/bin" "$HOME/.claude" "$HOME/.ssh" "$HOME/.playwright" "$HOME/Developer"
+    "$HOME/.local/bin" "$HOME/.claude" "$HOME/.codex" "$HOME/.gemini" \
+    "$HOME/.ssh" "$HOME/.playwright" "$HOME/Developer"
 
   # Symlink scripts from bin/
   if compgen -G "$DOTFILES_DIR/bin/*" >/dev/null; then
@@ -194,6 +195,9 @@ setup_symlinks() {
   symlink_with_diff "$DOTFILES_DIR/.config/mise/config.toml" "$HOME/.config/mise/config.toml"
   symlink_with_diff "$DOTFILES_DIR/.config/zed/settings.json" "$HOME/.config/zed/settings.json"
   symlink_with_diff "$DOTFILES_DIR/.claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
+  # AGENTS.md is the cross-CLI canonical; Gemini reads it via GEMINI.md symlink.
+  symlink_with_diff "$DOTFILES_DIR/AGENTS.md" "$HOME/.codex/AGENTS.md"
+  symlink_with_diff "$DOTFILES_DIR/AGENTS.md" "$HOME/.gemini/GEMINI.md"
   symlink_with_diff "$DOTFILES_DIR/.playwright/cli.config.json" "$HOME/.playwright/cli.config.json"
 
   # SSH config (1Password agent) and allowed signers (ssh-based commit signing)
