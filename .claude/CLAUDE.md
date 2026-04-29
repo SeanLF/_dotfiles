@@ -120,12 +120,19 @@ When the mode isn't obvious, ask. A one-word answer saves us both time.
 ## Paths
 
 - Projects: `~/Developer/`, experiments: `~/Developer/_experiments/`
-- Persistent tasks: `.claude/tasks/todo.md` (per-project)
 - Voice and style (all output, not just blog): read `~/.claude/writing-style.md`
+
+## Working files
+
+Put working docs where they belong:
+
+- Specs, architecture docs, QA plans, decisions → `docs/` (committed).
+- Active trackers, PoC outputs, throwaway → `scratch/` (gitignored; add to `.gitignore` if missing).
+- `.claude/` is reserved for agents, skills, settings — not working docs.
 
 ## Location
 
-- Paris (CET) as of Feb 2026. Update when travelling.
+- Portugal (WEST) as of 2026-04-28. Update when travelling.
 
 @principles.md
 @RTK.md
