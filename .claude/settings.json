@@ -46,7 +46,11 @@
     "swift-lsp@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {},
-  "voiceEnabled": true,
   "skipDangerousModePermissionPrompt": true,
-  "model": "sonnet"
+  "voiceEnabled": true,
+  "theme": "auto",
+  "verbose": true,
+  "preferredNotifChannel": "ghostty",
+  "remoteControlAtStartup": false,
+  "agentPushNotifEnabled": true
 }
