@@ -62,6 +62,8 @@ cask "1password"
 cask "1password-cli"
 # OpenAI's official ChatGPT desktop app
 cask "chatgpt"
+# Anthropic's official Claude AI desktop app
+cask "claude"
 # Terminal emulator that uses platform-native UI and GPU acceleration
 cask "ghostty"
 # Desktop client for GitHub repositories
@@ -70,8 +72,12 @@ cask "github"
 cask "google-chrome"
 # Free and open-source media player
 cask "iina"
+# Official Jagex Launcher (RuneScape)
+cask "jagex"
 # Reverse proxy, secure introspectable tunnels to localhost
 cask "ngrok"
+# Cloud gaming platform
+cask "nvidia-geforce-now"
 # Replacement for Docker Desktop
 cask "orbstack"
 # VPN client focusing on security
