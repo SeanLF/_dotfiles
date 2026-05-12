@@ -23,6 +23,7 @@ rust = "latest"
 "aqua:BurntSushi/ripgrep" = "latest"
 "aqua:koalaman/shellcheck" = "latest"
 "aqua:mvdan/sh" = "latest"                 # shfmt
+"aqua:realm/SwiftLint" = "latest"
 "aqua:astral-sh/ruff" = "latest"
 "aqua:tamasfe/taplo" = "latest"
 "npm:prettier" = "latest"
