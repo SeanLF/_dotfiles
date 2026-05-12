@@ -118,6 +118,22 @@ step_mise() {
   fi
 }
 
+# `mise prune` only removes orphaned versions tracked via configs; tools
+# installed with no config source linger silently. `mise ls` renders the
+# source config as the 3rd column, so any row with fewer than 3 columns
+# is an undeclared install.
+step_mise_drift() {
+  step "mise drift"
+  local drift
+  drift=$(mise ls 2>/dev/null | awk 'NF>0 && NF<3 {print "  - " $1 " " $2}') || true
+  if [[ -z "$drift" ]]; then
+    ok "all mise installs declared"
+  else
+    warn "untracked mise installs (declare in config or uninstall):"
+    echo "$drift" >&2
+  fi
+}
+
 step_uv() {
   step "uv tools"
   if $CHECK_ONLY; then
@@ -192,6 +208,7 @@ step_homebrew
 step_appstore
 step_claude_code
 step_mise
+step_mise_drift
 step_gems
 step_rustup
 step_uv
