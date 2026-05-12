@@ -47,10 +47,11 @@
   },
   "extraKnownMarketplaces": {},
   "skipDangerousModePermissionPrompt": true,
-  "voiceEnabled": true,
   "theme": "auto",
   "verbose": true,
   "preferredNotifChannel": "ghostty",
   "remoteControlAtStartup": false,
-  "agentPushNotifEnabled": true
+  "agentPushNotifEnabled": true,
+  "voiceEnabled": true,
+  "skipAutoPermissionPrompt": true
 }
