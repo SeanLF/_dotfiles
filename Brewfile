@@ -72,7 +72,7 @@ cask "github"
 cask "google-chrome"
 # Free and open-source media player
 cask "iina"
-# Official Jagex Launcher (RuneScape)
+# Official Jagex Launcher
 cask "jagex"
 # Reverse proxy, secure introspectable tunnels to localhost
 cask "ngrok"
