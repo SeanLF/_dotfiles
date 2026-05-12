@@ -44,6 +44,8 @@ brew "mise"
 brew "nbping"
 # CLI for NextDNS's DNS-over-HTTPS (DoH)
 brew "nextdns"
+# OpenBSD freely-licensed SSH connectivity tools
+brew "openssh"
 # Highly capable, feature-rich programming language
 brew "perl"
 # Compressed read-only file system for Linux
