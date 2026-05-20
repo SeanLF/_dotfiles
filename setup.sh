@@ -196,7 +196,8 @@ setup_symlinks() {
   symlink_with_diff "$DOTFILES_DIR/.config/zed/settings.json" "$HOME/.config/zed/settings.json"
   symlink_with_diff "$DOTFILES_DIR/.claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
   symlink_with_diff "$DOTFILES_DIR/writing-style.md" "$HOME/.claude/writing-style.md"
-  # AGENTS.md is the cross-CLI canonical; Gemini reads it via GEMINI.md symlink.
+  # AGENTS.md is the cross-CLI canonical; Antigravity reads it via the
+  # hardcoded ~/.gemini/GEMINI.md path (inherited from the Gemini CLI era).
   symlink_with_diff "$DOTFILES_DIR/AGENTS.md" "$HOME/.codex/AGENTS.md"
   # config.toml stays untracked: codex auto-appends [projects."/path"] trust
   # entries, leaking internal project names if it lived in a tracked repo.

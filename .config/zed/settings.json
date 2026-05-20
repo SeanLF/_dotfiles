@@ -8,9 +8,6 @@
 // command palette (cmd-shift-p / ctrl-shift-p)
 {
   "agent_servers": {
-    "gemini": {
-      "type": "registry"
-    },
     "codex-acp": {
       "type": "registry"
     },

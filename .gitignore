@@ -2,4 +2,5 @@
 .zshrc.local
 .DS_Store
 .playwright-cli/
+.antigravitycli/
 .claude/settings.local.json
