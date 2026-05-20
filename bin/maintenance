@@ -145,6 +145,13 @@ step_uv() {
 
 # Default gems shipped with mise-managed Ruby drift behind upstream and
 # aren't refreshed by `mise upgrade`.
+#
+# Gems with native extensions (openssl, etc.) need to find brew's OpenSSL
+# headers at build time. mise's Ruby doesn't ship pkg-config metadata for
+# its vendored openssl, so without these env vars `gem update openssl`
+# fails with "OpenSSL library could not be found". Passing --with-openssl-dir
+# after `--` forwards it to every gem's extconf.rb; gems that don't care
+# ignore unknown flags.
 step_gems() {
   step "Ruby gems"
   command -v gem &>/dev/null || {
@@ -153,6 +160,17 @@ step_gems() {
   }
   if $CHECK_ONLY; then
     gem outdated || true
+    return
+  fi
+
+  local openssl_prefix=""
+  if command -v brew &>/dev/null; then
+    openssl_prefix="$(brew --prefix openssl@3 2>/dev/null || true)"
+  fi
+
+  if [[ -n "$openssl_prefix" ]]; then
+    PKG_CONFIG_PATH="$openssl_prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
+      try gem update -- --with-openssl-dir="$openssl_prefix"
   else
     try gem update
   fi
