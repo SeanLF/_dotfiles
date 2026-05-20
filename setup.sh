@@ -22,7 +22,7 @@ backup() {
 }
 
 # Default module order — also what `all` runs. `macos` is opt-in only.
-DEFAULT_MODULES=(core brew symlinks tools ssh dns)
+DEFAULT_MODULES=(core brew symlinks tools ai_clis ssh dns)
 
 # Silent success, loud failure
 info() { echo "$1"; }
@@ -168,6 +168,27 @@ setup_tools() {
         mise prune --yes || warn "mise prune failed"
       fi
     fi
+  fi
+}
+
+# Module: AI CLIs without a brew/mise distribution path.
+# Claude Code and Antigravity CLI both ship as direct installers. They
+# self-update at runtime, so this module only handles first-time bootstrap;
+# bin/maintenance owns the upgrade path. Note: agy's install.sh self-verifies
+# via sha512; Claude's installer doesn't verify upstream.
+setup_ai_clis() {
+  if command -v claude &>/dev/null; then
+    info "claude: already installed"
+  else
+    drift "claude not installed"
+    $DRY_RUN || curl -fsSL https://claude.ai/install.sh | bash || warn "claude install failed"
+  fi
+
+  if command -v agy &>/dev/null; then
+    info "agy: already installed"
+  else
+    drift "agy not installed"
+    $DRY_RUN || curl -fsSL https://antigravity.google/cli/install.sh | bash || warn "agy install failed"
   fi
 }
 
@@ -355,6 +376,7 @@ Modules:
   core      Install Xcode CLI tools and Homebrew
   brew      Install packages from Brewfile (with drift detection)
   tools     Install mise-managed runtimes/CLIs and uv-managed Python tools
+  ai_clis   Install Claude Code and Antigravity CLI (direct installers)
   symlinks  Create dotfile symlinks (with drift detection)
   ssh       Verify 1Password SSH agent
   dns       NextDNS sudoers + Tailscale search domain plist
@@ -393,6 +415,7 @@ main() {
       core) setup_core ;;
       brew) setup_brew ;;
       tools) setup_tools ;;
+      ai_clis) setup_ai_clis ;;
       symlinks) setup_symlinks ;;
       ssh) setup_ssh ;;
       dns) setup_dns ;;
