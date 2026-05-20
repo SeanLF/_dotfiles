@@ -98,16 +98,9 @@ step_claude_code() {
   fi
 }
 
-# Small Go binary, no redownload penalty — so no version-precheck dance like
-# step_claude_code needs to avoid Claude's ~200MB re-fetch.
-step_agy() {
-  step "Antigravity CLI"
-  command -v agy &>/dev/null || {
-    info "agy not installed, skipping"
-    return
-  }
-  $CHECK_ONLY || try agy update
-}
+# agy self-updates in the background on every invocation (per upstream install
+# script), and `agy update` re-fetches the full ~42MB tarball even when current.
+# Skip it here.
 
 # NextDNS is installed via Homebrew, so `brew upgrade` above already handles it.
 # The CLI's own `nextdns upgrade` subcommand can't overwrite a brew-managed
@@ -236,7 +229,6 @@ fi
 step_homebrew
 step_appstore
 step_claude_code
-step_agy
 step_mise
 step_mise_drift
 step_gems
