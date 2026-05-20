@@ -88,8 +88,7 @@ step_claude_code() {
   remote_ver="$(curl -sf "$dist_url/latest" 2>/dev/null || true)"
 
   if [[ -z "$remote_ver" ]]; then
-    warn "could not check latest Claude Code version"
-    $CHECK_ONLY || try claude update
+    warn "could not check latest Claude Code version, skipping"
   elif [[ "$local_ver" == "$remote_ver" ]]; then
     ok "Claude Code is already up to date ($local_ver)"
   else
