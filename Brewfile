@@ -48,6 +48,8 @@ brew "nextdns"
 brew "openssh"
 # Highly capable, feature-rich programming language
 brew "perl"
+# PDF rendering library (based on the xpdf-3.0 code base)
+brew "poppler"
 # Compressed read-only file system for Linux
 brew "squashfs"
 # Vi 'workalike' with many additional features
@@ -70,6 +72,8 @@ cask "ghostty"
 cask "github"
 # Web browser
 cask "google-chrome"
+# Speech to text application
+cask "handy"
 # Free and open-source media player
 cask "iina"
 # Official Jagex Launcher
