@@ -25,6 +25,10 @@
           {
             "type": "command",
             "command": "~/.claude/hooks/pre-commit-review.sh"
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/pre-pr-review.sh"
           }
         ]
       }
@@ -53,5 +57,6 @@
   "remoteControlAtStartup": false,
   "agentPushNotifEnabled": true,
   "skipAutoPermissionPrompt": true,
-  "voiceEnabled": true
+  "voiceEnabled": true,
+  "inputNeededNotifEnabled": true
 }

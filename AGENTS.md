@@ -50,6 +50,10 @@ When the mode isn't obvious, ask. A one-word answer saves us both time.
 - Context > consistency; don't force a pattern just because it exists elsewhere; respond to the specific situation
 - Fixed time, flex scope; cut scope before throwing more resources at a problem
 - Before committing to a significant architecture or plan, dispatch subagents to prove it against real data; theoretical analysis is confidently wrong often enough that PoC experiments should be the default
+- Before claiming done or opening a PR, run the self-review — not just the tests:
+  - Re-run it the way a user actually invokes it and confirm every claim in docs/output is true; never assert a fact (a version, a compatibility, a consumer) from memory — dig and verify
+  - Confirm no best-effort/cosmetic path can crash or corrupt the primary job (an unguarded helper, a broad rescue, a heuristic false-positive)
+  - For any heuristic (detection, parsing, format/version), check the authoritative tool or spec before hand-rolling one
 
 ## Aesthetics
 
