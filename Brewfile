@@ -1,5 +1,7 @@
 tap "homebrew/autoupdate"
 tap "teamookla/speedtest"
+# Static checker for GitHub Actions workflow files
+brew "actionlint"
 # Library for command-line editing
 brew "readline"
 # Bourne-Again SHell, a UNIX command interpreter
