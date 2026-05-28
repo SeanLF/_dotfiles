@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run system maintenance, stream to stdout, then summarize with Claude Haiku.
+# Run system maintenance, stream to stdout, then summarize locally with apfel.
 set -o pipefail
 
 BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -11,8 +11,12 @@ status=${PIPESTATUS[0]}
 
 echo
 echo "── Summary ──"
-claude -p --model claude-haiku-4-5 \
-  "Summarize this system maintenance run in a few bullets. Call out any failures, warnings, or anything unusual. Be terse." \
-  <"$LOG"
+# apfel enforces the real 4096-token budget itself and fails cleanly on overflow,
+# so we don't second-guess it with a char heuristic. The full log is printed
+# above, so a failed summary degrades to a one-line notice.
+apfel -q --max-tokens 256 \
+  -s "Summarize a system maintenance run. Terse bullets; call out failures, warnings, or anything unusual." \
+  -f "$LOG" "Summarize:" ||
+  echo "(local summary unavailable -- see full output above)"
 
 exit "$status"
