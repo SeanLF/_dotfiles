@@ -59,5 +59,12 @@
   "inputNeededNotifEnabled": true,
   "agentPushNotifEnabled": true,
   "skipAutoPermissionPrompt": true,
-  "voiceEnabled": true
+  "voiceEnabled": true,
+  "statusLine": {
+    "type": "command",
+    "command": "ruby ~/.claude/statusline-command.rb"
+  },
+  "worktree": {
+    "bgIsolation": "none"
+  }
 }
