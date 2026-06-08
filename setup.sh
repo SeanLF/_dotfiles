@@ -232,9 +232,10 @@ setup_symlinks() {
     symlink_with_diff "$DOTFILES_DIR/.ssh/$f" "$HOME/.ssh/$f"
   done
 
-  # Claude commands and hooks directories (can't diff contents, so replace wholesale)
+  # Claude commands, hooks, and skills directories (can't diff contents, so replace wholesale)
   symlink_dir "$DOTFILES_DIR/.claude/commands" "$HOME/.claude/commands"
   symlink_dir "$DOTFILES_DIR/.claude/hooks" "$HOME/.claude/hooks"
+  symlink_dir "$DOTFILES_DIR/.claude/skills" "$HOME/.claude/skills"
 
   info "Symlinks: done"
 }
