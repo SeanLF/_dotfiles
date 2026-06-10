@@ -29,7 +29,9 @@ rust = "latest"
 "npm:prettier" = "latest"
 "aqua:openai/codex" = "latest"             # codex — native Rust binary
 "aqua:starship/starship" = "latest"
-"aqua:tldr-pages/tlrc" = "latest"
+# tlrc uses the github backend — the aqua registry entry predates upstream's
+# aarch64-apple-darwin builds and serves x86_64 via rosetta2, which this Mac can't run
+"github:tldr-pages/tlrc" = "latest"
 "aqua:ajeetdsouza/zoxide" = "latest"
 "github:Arthur-Ficial/apfel" = "latest"
 # mas stays on Homebrew — `brew bundle dump` uses it to enumerate App Store apps
