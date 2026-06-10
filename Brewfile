@@ -58,6 +58,8 @@ brew "poppler"
 brew "squashfs"
 # Vi 'workalike' with many additional features
 brew "vim"
+# Best command-line tool to install and switch between multiple versions of Xcode
+brew "xcodes"
 # Fish-like fast/unobtrusive autosuggestions for zsh
 brew "zsh-autosuggestions"
 # Fish shell like syntax highlighting for zsh
@@ -96,6 +98,8 @@ cask "protonvpn"
 cask "raycast"
 # Move and resize windows using keyboard shortcuts or snap areas
 cask "rectangle"
+# Instant messaging application focusing on security
+cask "signal"
 # Open-source media center
 cask "stremio@beta"
 # Mesh VPN based on WireGuard
