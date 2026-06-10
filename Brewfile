@@ -36,6 +36,8 @@ brew "imessage-exporter"
 brew "less"
 # YAML Parser
 brew "libyaml"
+# LLM inference in C/C++
+brew "llama.cpp"
 # Utility for directing compilation
 brew "make"
 # Mac App Store command-line interface
@@ -84,12 +86,16 @@ cask "jagex"
 cask "ngrok"
 # Cloud gaming platform
 cask "nvidia-geforce-now"
+# Get up and running with large language models locally
+cask "ollama-app"
 # Replacement for Docker Desktop
 cask "orbstack"
 # VPN client focusing on security
 cask "protonvpn"
 # Control your tools with a few keystrokes
 cask "raycast"
+# Move and resize windows using keyboard shortcuts or snap areas
+cask "rectangle"
 # Open-source media center
 cask "stremio@beta"
 # Mesh VPN based on WireGuard
