@@ -140,6 +140,7 @@ Put working docs where they belong:
 
 ## Tooling
 
+- `grep` resolves to a shell function → **ugrep**, not BSD/GNU; its `-o`/`-E` semantics differ (e.g. `-oE '.{120}foo.{200}'` context windows can return nothing). For searching big or minified single-line files use `rg` (ripgrep); for true GNU behavior use `ggrep`. GNU `sed`/`find` also available (gnubin on PATH); `fd`, `bat`, `eza` installed (`sd` is not).
 - RTK init: never run `rtk init -g --codex` or `rtk init -g --gemini`. Both clobber the AGENTS.md / GEMINI.md symlinks managed by dotfiles ([rtk-ai/rtk#834](https://github.com/rtk-ai/rtk/issues/834)). Use project-local `rtk init` only.
 
 ## Principles: background philosophy, not rules
