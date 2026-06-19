@@ -3,7 +3,6 @@
   "permissions": {
     "defaultMode": "default"
   },
-  "model": "claude-fable-5[1m]",
   "hooks": {
     "PostToolUse": [
       {
@@ -22,7 +21,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/rtk-rewrite.sh"
+            "command": "rtk hook claude"
           },
           {
             "type": "command",
