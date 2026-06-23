@@ -1,19 +1,21 @@
 #!/bin/bash
 # Claude Code on NVIDIA NIM (free hosted models) via the Olla proxy
 #
-# Usage: ccnim [-r] [-h] [claude args...]
+# Usage: ccnim [-m MODEL] [-r] [-h] [claude args...]
+#   -m, --model     glm (default) | nemotron | <full NIM model id>
 #   -r, --restart   Restart the Olla proxy first (use after editing its config)
 #   -h, --help      Show this help message
 #
-# Runs Claude Code CLI against NIM's free GLM-5.1 through Olla, a local
+# Runs Claude Code CLI against a free NIM model through Olla, a local
 # Anthropic<->OpenAI proxy. The NIM key is read from 1Password at runtime and
-# never stored. Olla auto-starts on :40114 if not already running. For
-# offline/confidential or heavy parallel work use `ccl` (local Ollama) instead.
+# never stored. -m switches both the main agent and subagents (Olla rewrites
+# the alias targets and reloads). Olla auto-starts on :40114 if not running.
+# For offline/confidential or heavy parallel work use `ccl` (local Ollama).
 
 set -e
 
 show_help() {
-  sed -n '2,11s/^# \{0,1\}//p' "$0"
+  sed -n '2,13s/^# \{0,1\}//p' "$0"
   exit 0
 }
 
@@ -22,8 +24,21 @@ olla_config="$HOME/.config/olla/config.yaml"
 op_ref="op://Private/r4dc7zukl4tr2yhye3vlonrh4i/credential"
 
 restart=false
+model="z-ai/glm-5.1"
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    -m | --model)
+      [[ -n "${2:-}" ]] || {
+        echo "ccnim: -m requires a model (glm | nemotron | <id>)" >&2
+        exit 1
+      }
+      case "$2" in
+        glm) model="z-ai/glm-5.1" ;;
+        nemotron) model="nvidia/nemotron-3-ultra-550b-a55b" ;;
+        *) model="$2" ;;
+      esac
+      shift 2
+      ;;
     -r | --restart)
       restart=true
       shift
@@ -56,6 +71,33 @@ key=$(op read "$op_ref" 2>/dev/null) || {
   exit 1
 }
 
+# Subagents send real Claude model names, not ANTHROPIC_MODEL, so they only
+# follow -m if Olla's aliases point at the chosen model. Repoint the alias
+# targets (4-space "- model" lines) and force a reload when the model changes.
+current=$(grep -m1 '^    - ' "$olla_config" | sed -E 's/^    - //')
+if [[ -z "$current" ]]; then
+  echo "ccnim: no '    - <model>' alias lines in $olla_config — subagents would 404." >&2
+  echo "       Check the model_aliases indentation/schema in the Olla config." >&2
+  exit 1
+fi
+if [[ "$current" != "$model" ]]; then
+  # Rewrite into a temp file in the same dir (atomic rename) and only commit on
+  # success — a failed sed must not fall through and launch the wrong model.
+  tmp=$(mktemp "$olla_config.XXXXXX")
+  if ! sed "s|^    - .*|    - $model|" "$olla_config" >"$tmp"; then
+    echo "ccnim: failed to rewrite Olla config; model not switched" >&2
+    rm -f "$tmp"
+    exit 1
+  fi
+  mv "$tmp" "$olla_config" || {
+    echo "ccnim: failed to install rewritten Olla config" >&2
+    rm -f "$tmp"
+    exit 1
+  }
+  echo "ccnim: model -> $model (Olla reloading)" >&2
+  restart=true
+fi
+
 if $restart; then
   pkill -f "olla -c $olla_config" 2>/dev/null || true
   # Wait for the port to actually free; a bare sleep races a still-shutting-down
@@ -65,6 +107,9 @@ if $restart; then
     sleep 0.5
     n=$((n + 1))
   done
+  if olla_up; then
+    echo "ccnim: warning: Olla still on :40114 after restart; it may serve the old model" >&2
+  fi
 fi
 
 if ! olla_up; then
@@ -91,6 +136,6 @@ fi
 # subscription login and force the custom endpoint; the value is unused by Olla.
 ANTHROPIC_BASE_URL="$olla_url/olla/anthropic" \
   ANTHROPIC_API_KEY="olla" \
-  ANTHROPIC_MODEL="z-ai/glm-5.1" \
-  ANTHROPIC_SMALL_FAST_MODEL="z-ai/glm-5.1" \
+  ANTHROPIC_MODEL="$model" \
+  ANTHROPIC_SMALL_FAST_MODEL="$model" \
   exec claude "$@"
