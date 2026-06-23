@@ -1,0 +1,96 @@
+#!/bin/bash
+# Claude Code on NVIDIA NIM (free hosted models) via the Olla proxy
+#
+# Usage: ccnim [-r] [-h] [claude args...]
+#   -r, --restart   Restart the Olla proxy first (use after editing its config)
+#   -h, --help      Show this help message
+#
+# Runs Claude Code CLI against NIM's free GLM-5.1 through Olla, a local
+# Anthropic<->OpenAI proxy. The NIM key is read from 1Password at runtime and
+# never stored. Olla auto-starts on :40114 if not already running. For
+# offline/confidential or heavy parallel work use `ccl` (local Ollama) instead.
+
+set -e
+
+show_help() {
+  sed -n '2,11s/^# \{0,1\}//p' "$0"
+  exit 0
+}
+
+olla_url="http://127.0.0.1:40114"
+olla_config="$HOME/.config/olla/config.yaml"
+op_ref="op://Private/r4dc7zukl4tr2yhye3vlonrh4i/credential"
+
+restart=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -r | --restart)
+      restart=true
+      shift
+      ;;
+    -h | --help) show_help ;;
+    *) break ;;
+  esac
+done
+
+# Olla returns 404 on / when healthy, so any HTTP response means "up"; only a
+# refused connection means "down". Do NOT add curl -f here (it would treat the
+# healthy 404 as down and loop forever). 2>/dev/null keeps the startup poll quiet.
+olla_up() { curl -s -o /dev/null --max-time 2 "$olla_url/" 2>/dev/null; }
+
+command -v olla >/dev/null || {
+  echo "ccnim: 'olla' not found on PATH" >&2
+  exit 1
+}
+[[ -r "$olla_config" ]] || {
+  echo "ccnim: Olla config not found: $olla_config" >&2
+  exit 1
+}
+
+key=$(op read "$op_ref" 2>/dev/null) || {
+  echo "ccnim: couldn't read NIM key from 1Password (run 'op signin' first)" >&2
+  exit 1
+}
+[[ -n "$key" ]] || {
+  echo "ccnim: NIM credential is empty in 1Password ($op_ref)" >&2
+  exit 1
+}
+
+if $restart; then
+  pkill -f "olla -c $olla_config" 2>/dev/null || true
+  # Wait for the port to actually free; a bare sleep races a still-shutting-down
+  # daemon, which would pass olla_up below and silently skip the restart.
+  n=0
+  while olla_up && [[ $n -lt 10 ]]; do
+    sleep 0.5
+    n=$((n + 1))
+  done
+fi
+
+if ! olla_up; then
+  API_KEY="$key" nohup olla -c "$olla_config" >/tmp/olla.log 2>&1 &
+  olla_pid=$!
+  disown
+  n=0
+  until olla_up; do
+    if ! kill -0 "$olla_pid" 2>/dev/null; then
+      echo "ccnim: Olla exited during startup:" >&2
+      tail -n 15 /tmp/olla.log >&2
+      exit 1
+    fi
+    if [[ $n -ge 20 ]]; then
+      echo "ccnim: Olla did not become healthy in 10s (see /tmp/olla.log)" >&2
+      exit 1
+    fi
+    sleep 0.5
+    n=$((n + 1))
+  done
+fi
+
+# ANTHROPIC_API_KEY (not AUTH_TOKEN) is required to override an active Claude
+# subscription login and force the custom endpoint; the value is unused by Olla.
+ANTHROPIC_BASE_URL="$olla_url/olla/anthropic" \
+  ANTHROPIC_API_KEY="olla" \
+  ANTHROPIC_MODEL="z-ai/glm-5.1" \
+  ANTHROPIC_SMALL_FAST_MODEL="z-ai/glm-5.1" \
+  exec claude "$@"

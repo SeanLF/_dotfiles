@@ -1,0 +1,26 @@
+#!/bin/bash
+# Claude Code on a local Ollama model (no rate limit, fully offline)
+#
+# Usage: ccl [-h] [model]
+#   -h, --help   Show this help message
+#   model        Ollama model to run (default: glm-4.7-flash)
+#
+# Runs Claude Code CLI against a local model via Ollama's native Anthropic
+# endpoint, no proxy needed. Use for offline/confidential or heavy parallel
+# work; `ccnim` is the free cloud (NIM) tier. Inspect the backend with
+# `mlxcheck` after the model loads (GGUF tags run on Metal, not MLX).
+
+set -e
+
+show_help() {
+  sed -n '2,11s/^# \{0,1\}//p' "$0"
+  exit 0
+}
+
+case "${1:-}" in
+  -h | --help) show_help ;;
+esac
+
+model="${1:-glm-4.7-flash}"
+export OLLAMA_CONTEXT_LENGTH="${OLLAMA_CONTEXT_LENGTH:-65536}"
+exec ollama launch claude --model "$model"

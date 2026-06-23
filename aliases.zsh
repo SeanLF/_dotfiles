@@ -28,6 +28,15 @@ alias gpf='git push --force-with-lease'
 alias gst='git status'
 alias gsw='git switch'
 
+# Claude Code launchers live as scripts in bin/ (ccnim = free NIM cloud via Olla,
+# ccl = local Ollama). mlxcheck stays here as a trivial one-liner.
+#
+# Did the most recently loaded Ollama model use the MLX backend or llama.cpp?
+mlxcheck() {
+  grep -iE "mlx|llama runner|starting llama server" ~/.ollama/logs/server.log \
+    | tail -5 || echo "no backend lines yet — load a model first"
+}
+
 # Johnny Decimal navigation for Documents
 jd() {
   local base_dir="$HOME/Library/Mobile Documents/com~apple~CloudDocs/Documents"
