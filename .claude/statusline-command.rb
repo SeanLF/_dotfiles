@@ -23,6 +23,11 @@ HATCH   = "▓"  # used, past the on-pace line
 TRACK   = "░"  # remaining
 WEEK    = 7 * 86_400  # seconds in the seven_day window
 LOG     = File.expand_path(ENV["STATUSLINE_LOG"] || "~/.claude/statusline.log")
+# The live rate-limit payload only ever reaches this status line process; nothing
+# else on the machine can see it on demand. So we mirror it to a cache file every
+# render -- the `checking-usage` skill reads this to answer "how much budget is
+# left?" mid-session. captured_at lets the reader reject stale data.
+CACHE   = File.expand_path(ENV["USAGE_CACHE"] || "~/.claude/usage-cache.json")
 
 # Best-effort anomaly log: never raises, capped to the last 200 lines. The happy
 # path writes nothing -- only malformed input or unexpected errors land here.
@@ -73,6 +78,19 @@ def meter(used_frac, pace_frac, width)
   end.join
 end
 
+# Persist the rate-limit payload for out-of-band readers (the checking-usage
+# skill). Fail-quiet like everything else here: a write error must never disturb
+# the bar. Only writes when there's something to record.
+def cache_usage(rl, now)
+  return if rl.nil? || rl.empty?
+
+  tmp = "#{CACHE}.#{Process.pid}.tmp"
+  File.write(tmp, JSON.generate("captured_at" => now, "rate_limits" => rl))
+  File.rename(tmp, CACHE)  # atomic swap so a concurrent reader never sees a half-written file
+rescue StandardError => e
+  log("warn", "usage cache write failed: #{e.class}: #{e.message}")
+end
+
 parts = []
 begin
   data = begin
@@ -92,6 +110,8 @@ begin
 
   now  = Time.now.to_i
   cols = (ENV["COLUMNS"] || "120").to_i
+
+  cache_usage(rl, now)
 
   fh = rl["five_hour"]
   if typed?(rl, "five_hour", Hash, "five_hour") && typed?(fh, "used_percentage", Numeric, "five_hour.used_percentage")

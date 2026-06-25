@@ -3,7 +3,18 @@
   "permissions": {
     "defaultMode": "default"
   },
+  "model": "opus[1m]",
   "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "ruby ~/.claude/hooks/usage-pace-warn.rb"
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Task",
@@ -11,6 +22,14 @@
           {
             "type": "command",
             "command": "~/.claude/hooks/post-review-sentinel.sh"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "ruby ~/.claude/hooks/usage-pace-warn.rb"
           }
         ]
       }
