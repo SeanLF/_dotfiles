@@ -58,8 +58,11 @@ step_homebrew() {
     brew outdated || true
     brew outdated --cask --greedy-auto-updates || true
   else
-    try brew upgrade
-    try brew upgrade --cask
+    # Homebrew made "ask mode" the default for `brew upgrade`, so it prompts
+    # "Do you want to proceed? [y/n]" whenever a TTY is attached (i.e. when run
+    # by hand). --no-ask restores unattended behaviour. https://github.com/Homebrew/brew/issues/22597
+    try brew upgrade --no-ask
+    try brew upgrade --cask --no-ask
     try brew autoremove
     try brew cleanup
   fi
