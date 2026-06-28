@@ -1,4 +1,3 @@
-tap "homebrew/autoupdate"
 tap "teamookla/speedtest"
 # Static checker for GitHub Actions workflow files
 brew "actionlint"
@@ -8,6 +7,8 @@ brew "readline"
 brew "bash"
 # Resource monitor. C++ version and continuation of bashtop and bpytop
 brew "btop"
+# Tool for emulating mouse and keyboard events
+brew "cliclick"
 # Get a file from an HTTP, HTTPS or FTP server
 brew "curl"
 # File comparison utilities
@@ -54,10 +55,14 @@ brew "openssh"
 brew "perl"
 # PDF rendering library (based on the xpdf-3.0 code base)
 brew "poppler"
+# Fast command-line bittorrent client and server
+brew "rqbit"
 # Compressed read-only file system for Linux
 brew "squashfs"
 # Vi 'workalike' with many additional features
 brew "vim"
+# Generate your Xcode project from a spec file and your folder structure
+brew "xcodegen"
 # Best command-line tool to install and switch between multiple versions of Xcode
 brew "xcodes"
 # Fish-like fast/unobtrusive autosuggestions for zsh
@@ -72,6 +77,8 @@ cask "1password-cli"
 cask "chatgpt"
 # Anthropic's official Claude AI desktop app
 cask "claude"
+# Voice and text chat software
+cask "discord"
 # Terminal emulator that uses platform-native UI and GPU acceleration
 cask "ghostty"
 # Desktop client for GitHub repositories
