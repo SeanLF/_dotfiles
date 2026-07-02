@@ -15,8 +15,10 @@
 #
 # Exit codes: 0 = report printed, 2 = no/garbled cache (can't advise).
 require "json"
+require_relative "burn"
 
-CACHE = File.expand_path(ENV["USAGE_CACHE"] || "~/.claude/usage-cache.json")
+CACHE   = File.expand_path(ENV["USAGE_CACHE"] || "~/.claude/usage-cache.json")
+HISTORY = File.expand_path(ENV["USAGE_HISTORY"] || "~/.claude/rate-limit-history.jsonl")
 
 # Tunable thresholds (percent used).
 SESSION_FULL = (ENV["USAGE_SESSION_FULL"] || "92").to_f   # 5h window effectively spent
@@ -94,6 +96,10 @@ else
   lines << "SESSION  (no five_hour data in payload)"
 end
 
+# Set when the measured burn rate would hit the weekly cap before the window
+# resets -- the "you're going too fast today, you'll throttle later" signal.
+burn_warn = false
+
 if wk_used
   seg = format("WEEKLY   %d%% used", wk_used.round)
   seg += "  ·  resets in #{fmt_dur(wk_reset - now.to_i)}" if wk_reset
@@ -116,6 +122,22 @@ if wk_used
     # cap, and it can't see how much of today you've already spent. Spending over
     # it just shrinks tomorrow's share -- it self-corrects, it doesn't lock you out.
     lines << format("         pace guide: ~%d%%/day spends the rest evenly to reset (not a hard cap)", today_cap.round)
+
+    # Measured burn from the recorded history (reset-robust): if the current run's
+    # rate would reach 100% before the window resets, that's the real throttle
+    # warning -- the weekly ceiling nobody advertises, arriving early. `entries` is
+    # nil only when a non-empty history won't parse (drift/corruption) -- surface
+    # that rather than let a dead projection read as "all clear".
+    entries = Burn.read(HISTORY, now.to_i)
+    proj    = Burn.project(entries)
+    if proj
+      secs_to_cap = proj[:hours_to_cap] * 3600
+      burn_warn   = secs_to_cap < (wk_reset - now.to_i)
+      tail = burn_warn ? "BEFORE the reset -- ease off" : "after the reset -- fine"
+      lines << format("         burn: ~%.2f%%/h -> hits the cap in ~%s, %s", proj[:burn_per_h], fmt_dur(secs_to_cap), tail)
+    elsif entries.nil?
+      lines << "         burn: history unreadable -- projection unavailable (not a clear signal)"
+    end
   end
 else
   lines << "WEEKLY   (no seven_day data in payload)"
@@ -138,6 +160,10 @@ verdict =
       "Land what's in flight and stop for the week."
   elsif wk_used.nil? && ses_used.nil?
     "UNKNOWN -- payload had no budget data. Don't guess; re-render the status line."
+  elsif burn_warn
+    head = wk_left ? "#{wk_left}% weekly headroom now" : "weekly headroom now"
+    "PACE DOWN -- #{head}, but at your recent burn the weekly cap arrives before the " \
+      "reset. Keep going, just spread the spend so you don't throttle later in the week."
   else
     head = wk_left ? "#{wk_left}% weekly headroom" : "weekly budget healthy"
     "KEEP GOING -- #{head}; session has room. Spend the budget you were asked to spend."

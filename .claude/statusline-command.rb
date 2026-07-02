@@ -37,6 +37,11 @@ LOG     = File.expand_path(ENV["STATUSLINE_LOG"] || "~/.claude/statusline.log")
 # render -- the `checking-usage` skill reads this to answer "how much budget is
 # left?" mid-session. captured_at lets the reader reject stale data.
 CACHE   = File.expand_path(ENV["USAGE_CACHE"] || "~/.claude/usage-cache.json")
+# Append-only log of weekly/session % over time, one JSON line per CHANGE. The
+# cache is a single latest-snapshot; this is the series the checking-usage reader
+# turns into a burn rate ("weekly hits the cap in ~Xh"). Deduped so the constant
+# re-renders don't spam it -- a sample lands only when a number actually moves.
+HISTORY = File.expand_path(ENV["USAGE_HISTORY"] || "~/.claude/rate-limit-history.jsonl")
 
 # Best-effort anomaly log: never raises, capped to the last 200 lines. The happy
 # path writes nothing -- only malformed input or unexpected errors land here.
@@ -130,6 +135,42 @@ rescue StandardError => e
   log("warn", "usage cache write failed: #{e.class}: #{e.message}")
 end
 
+# Last recorded history entry, read from the file's tail so this stays O(1) as the
+# log grows (never slurp the whole file on the hot render path). nil if none/garbled.
+def last_history_entry
+  return nil unless File.exist?(HISTORY)
+
+  tail = File.open(HISTORY, "rb") do |f|
+    f.seek([f.size - 512, 0].max)
+    f.read
+  end
+  line = tail.to_s.lines.map(&:strip).reject(&:empty?).last
+  line && JSON.parse(line)
+rescue StandardError
+  nil  # a bad tail just means "no usable last entry" -> we'll append a fresh one
+end
+
+# Append one weekly/session sample, but only when weekly % or its window changed
+# since the last sample (renders are constant; we want a point per real move).
+# Append-only single-line writes are atomic across the concurrent windows that all
+# render this bar, so no locking. rate_limits is account-global, so every window
+# records the same series -- dedup makes the duplicates harmless.
+def record_history(rl, now)
+  sd = rl["seven_day"]
+  return unless sd.is_a?(Hash) && sd["used_percentage"].is_a?(Numeric)
+
+  entry = { "t" => now, "wk" => sd["used_percentage"], "wk_reset" => sd["resets_at"] }
+  fh = rl["five_hour"]
+  entry["ses"] = fh["used_percentage"] if fh.is_a?(Hash) && fh["used_percentage"].is_a?(Numeric)
+
+  last = last_history_entry
+  return if last && last["wk"] == entry["wk"] && last["wk_reset"] == entry["wk_reset"]
+
+  File.open(HISTORY, "a") { |f| f.write("#{JSON.generate(entry)}\n") }
+rescue StandardError => e
+  log("warn", "history append failed: #{e.class}: #{e.message}")
+end
+
 # Segments grouped by timescale so the line has a logical progression: what's
 # happening now (context) -> this session (5h) -> this week (7d). The elastic
 # weekly bar sits last, which also keeps the fixed-width groups at stable left
@@ -157,6 +198,7 @@ begin
   cols = (ENV["COLUMNS"] || "120").to_i
 
   cache_usage(data, now)
+  record_history(rl, now)
 
   fh = rl["five_hour"]
   if typed?(rl, "five_hour", Hash, "five_hour") && typed?(fh, "used_percentage", Numeric, "five_hour.used_percentage")
