@@ -104,15 +104,18 @@ if wk_used
     elapsed   = ((now.to_i - (wk_reset - WEEK)).to_f / WEEK).clamp(0.0, 1.0) * 100
     delta     = wk_used - elapsed                    # +ve = burning faster than even
     days_left = [(wk_reset - now.to_i).to_f / 86_400, 0.0001].max
-    remaining = 100 - wk_used
-    today_cap = [remaining, remaining / days_left].min.clamp(0, 100)  # spend-and-still-last
+    remaining = [100 - wk_used, 0.0].max
+    today_cap = [remaining, remaining / days_left].min.clamp(0, 100)  # even-burn daily share
     pace_note =
       if delta.abs < 2 then "on pace"
       elsif delta.positive? then format("%dpts AHEAD of pace (burning fast)", delta.round)
       else format("%dpts UNDER pace (room to spend faster)", (-delta).round)
       end
     lines << format("         %d%% of week elapsed -> %s", elapsed.round, pace_note)
-    lines << format("         budget: ~%d%% of the weekly pool is safe to spend today", today_cap.round)
+    # today_cap is an even-burn PACE guide, not a real quota: there is no daily
+    # cap, and it can't see how much of today you've already spent. Spending over
+    # it just shrinks tomorrow's share -- it self-corrects, it doesn't lock you out.
+    lines << format("         pace guide: ~%d%%/day spends the rest evenly to reset (not a hard cap)", today_cap.round)
   end
 else
   lines << "WEEKLY   (no seven_day data in payload)"
@@ -120,19 +123,23 @@ end
 
 lines << ""
 
+# Weekly headroom, floored at 0 so an over-budget window (used_percentage > 100)
+# never prints a nonsensical negative "% left".
+wk_left = wk_used ? [100 - wk_used, 0].max.round : nil
+
 verdict =
   if ses_used && ses_used >= SESSION_FULL && (wk_used.nil? || wk_used < WEEKLY_LOW)
-    left = wk_used ? "#{(100 - wk_used).round}%" : "budget"
+    left = wk_left ? "#{wk_left}%" : "budget"
     rst  = ses_reset ? " (resets in #{fmt_dur(ses_reset - now.to_i)})" : ""
     "SESSION-LIMITED -- 5h window almost full#{rst}. TEMPORARY: pause and resume " \
       "after the session resets. Do NOT call the work done while #{left} of the weekly pool remains."
   elsif wk_used && wk_used >= WEEKLY_LOW
-    "WIND DOWN -- weekly pool is nearly spent (#{(100 - wk_used).round}% left). " \
+    "WIND DOWN -- weekly pool is nearly spent (#{wk_left}% left). " \
       "Land what's in flight and stop for the week."
   elsif wk_used.nil? && ses_used.nil?
     "UNKNOWN -- payload had no budget data. Don't guess; re-render the status line."
   else
-    head = wk_used ? "#{(100 - wk_used).round}% weekly headroom" : "weekly budget healthy"
+    head = wk_left ? "#{wk_left}% weekly headroom" : "weekly budget healthy"
     "KEEP GOING -- #{head}; session has room. Spend the budget you were asked to spend."
   end
 lines << "VERDICT  #{verdict}"

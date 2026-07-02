@@ -61,6 +61,13 @@ def fmt_dur(secs)
   "#{m}m"
 end
 
+# Compact token count for a context-window size: 1000000 -> "1M", 200000 -> "200k".
+def fmt_size(n)
+  return nil unless n.is_a?(Numeric) && n.positive?
+
+  n >= 1_000_000 ? "#{(n / 1_000_000.0).round}M" : "#{(n / 1000.0).round}k"
+end
+
 # Monochrome meter. fill = fraction used; cells beyond pace_frac render hatched.
 def meter(used_frac, pace_frac, width)
   used_w = used_frac * width
@@ -78,14 +85,27 @@ def meter(used_frac, pace_frac, width)
   end.join
 end
 
-# Persist the rate-limit payload for out-of-band readers (the checking-usage
-# skill). Fail-quiet like everything else here: a write error must never disturb
-# the bar. Only writes when there's something to record.
-def cache_usage(rl, now)
-  return if rl.nil? || rl.empty?
+# Mirror the WHOLE hook payload (plus captured_at) for out-of-band readers like
+# the checking-usage skill -- so any field can be used later, not just the ones
+# the bar happens to draw.
+#
+# Global vs session-local is the thing to get right: rate_limits is ACCOUNT-GLOBAL
+# (same in every window) and safe to trust across sessions; everything else
+# (context_window, cost, model, cwd...) is SESSION-LOCAL and reflects whichever
+# window rendered LAST. The payload's session_id rides along as the discriminator:
+# a reader may trust rate_limits unconditionally, but must match session_id before
+# treating any session-local field as its own (else read that session's jsonl).
+#
+# Only writes when rate_limits is present. Early in a session (before the first
+# API response) the payload has no rate_limits; writing then would overwrite the
+# last-known-good global budget with a blank and stamp it fresh, silently blinding
+# the reader. Skipping preserves the prior cache. Fail-quiet: a write error must
+# never disturb the bar.
+def cache_usage(data, now)
+  return unless data.is_a?(Hash) && data["rate_limits"].is_a?(Hash) && !data["rate_limits"].empty?
 
   tmp = "#{CACHE}.#{Process.pid}.tmp"
-  File.write(tmp, JSON.generate("captured_at" => now, "rate_limits" => rl))
+  File.write(tmp, JSON.generate(data.merge("captured_at" => now)))
   File.rename(tmp, CACHE)  # atomic swap so a concurrent reader never sees a half-written file
 rescue StandardError => e
   log("warn", "usage cache write failed: #{e.class}: #{e.message}")
@@ -111,7 +131,7 @@ begin
   now  = Time.now.to_i
   cols = (ENV["COLUMNS"] || "120").to_i
 
-  cache_usage(rl, now)
+  cache_usage(data, now)
 
   fh = rl["five_hour"]
   if typed?(rl, "five_hour", Hash, "five_hour") && typed?(fh, "used_percentage", Numeric, "five_hour.used_percentage")
@@ -120,16 +140,46 @@ begin
     parts << seg
   end
 
+  # Context window fill -- the fastest-moving, most-glanced signal (drives
+  # compaction), and absent from Claude Code's own bar. used_percentage is on
+  # recent builds; older ones give only token counts, so derive as a fallback.
+  # It rides along in the cache (whole payload is mirrored) but is SESSION-LOCAL:
+  # a cross-session reader must not treat it as its own window's usage.
+  cw = data["context_window"]
+  if typed?(data, "context_window", Hash, "context_window")
+    ctx =
+      if cw["used_percentage"].is_a?(Numeric)
+        cw["used_percentage"].to_f
+      elsif cw["total_input_tokens"].is_a?(Numeric) && cw["context_window_size"].is_a?(Numeric) && cw["context_window_size"].positive?
+        cw["total_input_tokens"].to_f / cw["context_window_size"] * 100
+      end
+    if ctx
+      seg  = "ctx #{ctx.round}%"
+      size = fmt_size(cw["context_window_size"])
+      seg += " #{size}" if size
+      parts << seg
+    else
+      # Hash present but no derivable % -> inner keys renamed. Log it, like the
+      # seven_day guard below, so a schema change can't drop the segment silently.
+      log("warn", "context_window present but no derivable usage (keys: #{cw.keys.join(', ')})")
+    end
+  end
+
   sd = rl["seven_day"]
   if typed?(rl, "seven_day", Hash, "seven_day") && typed?(sd, "used_percentage", Numeric, "seven_day.used_percentage")
     used  = sd["used_percentage"]
-    width = [[cols - 34, 40].min, 16].max
+    # Reserve enough columns for the surrounding text so the bar never pushes the
+    # line past COLUMNS and wraps. Widest non-bar case -- everything at 100% with
+    # long durations, "ses 100% 4h59m  ctx 100% 200k  wk  100% 6d23h  day 100%" --
+    # is ~55 chars; reserve 56 for a column of slack. (On wide terminals the bar
+    # is capped at 40 anyway, so this only bites below ~96 cols.)
+    width = [[cols - 56, 40].min, 16].max
     if typed?(sd, "resets_at", Numeric, "seven_day.resets_at")
       reset     = sd["resets_at"]
       pace      = ((now - (reset - WEEK)).to_f / WEEK).clamp(0.0, 1.0)
       days_left = [(reset - now).to_f / 86_400, 0.0001].max
       day       = [100 - used, (100 - used) / days_left].min.clamp(0, 100)
-      parts << "wk #{meter(used / 100.0, pace, width)} #{used.round}%"
+      parts << "wk #{meter(used / 100.0, pace, width)} #{used.round}% #{fmt_dur(reset - now)}"
       parts << "day #{day.round}%"
     else
       parts << "wk #{meter(used / 100.0, nil, width)} #{used.round}%"
