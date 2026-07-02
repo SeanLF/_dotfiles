@@ -29,6 +29,7 @@ TRACK   = "░"  # remaining
 RESET   = "\e[0m"
 YELLOW  = "\e[93m"
 RED     = "\e[91m"  # bright, so it stays legible on dark backgrounds
+SEP     = " \e[2m·\e[22m "  # faint dot between timescale groups (recedes; content pops)
 WEEK    = 7 * 86_400  # seconds in the seven_day window
 LOG     = File.expand_path(ENV["STATUSLINE_LOG"] || "~/.claude/statusline.log")
 # The live rate-limit payload only ever reaches this status line process; nothing
@@ -129,7 +130,13 @@ rescue StandardError => e
   log("warn", "usage cache write failed: #{e.class}: #{e.message}")
 end
 
-parts = []
+# Segments grouped by timescale so the line has a logical progression: what's
+# happening now (context) -> this session (5h) -> this week (7d). The elastic
+# weekly bar sits last, which also keeps the fixed-width groups at stable left
+# positions instead of shifting with COLUMNS.
+now_grp = []  # this conversation (context window)
+ses_grp = []  # 5h rolling session
+wk_grp  = []  # 7d weekly pool
 begin
   data = begin
     JSON.parse($stdin.read)
@@ -156,7 +163,7 @@ begin
     ses = fh["used_percentage"].round
     seg = "ses #{sev("#{ses}%", ses, warn: 80, crit: 92)}"
     seg += " #{fmt_dur(fh['resets_at'] - now)}" if typed?(fh, "resets_at", Numeric, "five_hour.resets_at")
-    parts << seg
+    ses_grp << seg
   end
 
   # Context window fill -- the fastest-moving, most-glanced signal (drives
@@ -177,7 +184,7 @@ begin
       seg  = "ctx #{sev("#{pct}%", pct, warn: 70, crit: 90)}"
       size = fmt_size(cw["context_window_size"])
       seg += " #{size}" if size
-      parts << seg
+      now_grp << seg
     else
       # Hash present but no derivable % -> inner keys renamed. Log it, like the
       # seven_day guard below, so a schema change can't drop the segment silently.
@@ -190,10 +197,10 @@ begin
     used  = sd["used_percentage"]
     # Reserve enough columns for the surrounding text so the bar never pushes the
     # line past COLUMNS and wraps. Widest non-bar case -- everything at 100% with
-    # long durations, "ses 100% 4h59m  ctx 100% 200k  wk  100% 6d23h  day 100%" --
-    # is ~55 chars; reserve 56 for a column of slack. (On wide terminals the bar
-    # is capped at 40 anyway, so this only bites below ~96 cols.)
-    width = [[cols - 56, 40].min, 16].max
+    # long durations and both group separators, "ctx 100% 200k · ses 100% 4h59m ·
+    # wk  100% 6d23h  day 100%" -- is ~57 chars; reserve 58 for a column of slack.
+    # (On wide terminals the bar is capped at 40 anyway, so this bites below ~98.)
+    width = [[cols - 58, 40].min, 16].max
     # Threshold on the displayed (rounded) value so the colour never disagrees
     # with the number; hoisted so both branches share one 75/90 definition.
     wk = sev("#{used.round}%", used.round, warn: 75, crit: 90)
@@ -202,10 +209,10 @@ begin
       pace      = ((now - (reset - WEEK)).to_f / WEEK).clamp(0.0, 1.0)
       days_left = [(reset - now).to_f / 86_400, 0.0001].max
       day       = [100 - used, (100 - used) / days_left].min.clamp(0, 100)
-      parts << "wk #{meter(used / 100.0, pace, width)} #{wk} #{fmt_dur(reset - now)}"
-      parts << "day #{day.round}%"
+      wk_grp << "wk #{meter(used / 100.0, pace, width)} #{wk} #{fmt_dur(reset - now)}"
+      wk_grp << "day #{day.round}%"
     else
-      parts << "wk #{meter(used / 100.0, nil, width)} #{wk}"
+      wk_grp << "wk #{meter(used / 100.0, nil, width)} #{wk}"
     end
   end
 
@@ -218,4 +225,7 @@ rescue StandardError => e
   log("error", "#{e.class}: #{e.message} @ #{e.backtrace&.first}")
 end
 
-print parts.join("  ")
+# Display order = timescale progression; within a group, segments join tight
+# (double-space), groups join on the faint separator. Empty groups drop out.
+groups = [now_grp, ses_grp, wk_grp].reject(&:empty?).map { |g| g.join("  ") }
+print groups.join(SEP)
