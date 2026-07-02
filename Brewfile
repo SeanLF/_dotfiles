@@ -63,7 +63,7 @@ brew "squashfs"
 brew "vim"
 # Generate your Xcode project from a spec file and your folder structure
 brew "xcodegen"
-# Best command-line tool to install and switch between multiple versions of Xcode
+# Command-line tool to install and switch between multiple versions of Xcode
 brew "xcodes"
 # Fish-like fast/unobtrusive autosuggestions for zsh
 brew "zsh-autosuggestions"

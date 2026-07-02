@@ -136,7 +136,7 @@ Put working docs where they belong:
 
 ## Location
 
-- Portugal (WEST) as of 2026-04-28. Update when travelling.
+- Ottawa, Canada (EDT, UTC-4) from 2026-06-15 until early August 2026. Update when travelling.
 
 ## Tooling
 
