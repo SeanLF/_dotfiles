@@ -1,15 +1,20 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Claude Code status line -- usage gauge (session + weekly budget), text only.
+# Claude Code status line -- usage gauge (session + weekly budget).
 #
-# Colour is unreliable in the status line (Claude Code dims/overrides ANSI), so
-# this is deliberately monochrome: information is carried by shape and texture.
+# The bar is monochrome by design: information is carried by shape and texture,
+# which read even where colour doesn't.
 #   solid block  = budget used and on pace
 #   hatch block  = budget used but PAST the on-pace line (burning too fast)
 #   light shade  = remaining
 # When you're within pace the bar is clean solid; an over-pace tail turns rough.
 # The weekly bar widens with the terminal (COLUMNS) for finer resolution.
+#
+# Colour (ANSI, officially supported -- code.claude.com/docs/en/statusline) is
+# used ONLY as an escalation signal on the numbers: healthy values stay plain so
+# the line reads calm, and go yellow -> bright red as a window nears its limit.
+# Bright red (91) not dark red (31), which is near-invisible on dark terminals.
 #
 # It fails quiet (degrades to blank) so it never dumps a stack trace into the
 # bar -- but anomalies are recorded in LOG, so a Claude Code payload change can't
@@ -21,6 +26,9 @@ EIGHTHS = [" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉", "█"].freeze
 SOLID   = "█"  # used, on pace
 HATCH   = "▓"  # used, past the on-pace line
 TRACK   = "░"  # remaining
+RESET   = "\e[0m"
+YELLOW  = "\e[93m"
+RED     = "\e[91m"  # bright, so it stays legible on dark backgrounds
 WEEK    = 7 * 86_400  # seconds in the seven_day window
 LOG     = File.expand_path(ENV["STATUSLINE_LOG"] || "~/.claude/statusline.log")
 # The live rate-limit payload only ever reaches this status line process; nothing
@@ -66,6 +74,16 @@ def fmt_size(n)
   return nil unless n.is_a?(Numeric) && n.positive?
 
   n >= 1_000_000 ? "#{(n / 1_000_000.0).round}M" : "#{(n / 1000.0).round}k"
+end
+
+# Escalation colour for a percentage: plain when healthy, yellow past `warn`,
+# bright red past `crit`. Only the passed text is wrapped, so layout is unaffected
+# (the ANSI bytes add no display width, and the bar sizing never measures these).
+def sev(text, pct, warn:, crit:)
+  return "#{RED}#{text}#{RESET}" if pct >= crit
+  return "#{YELLOW}#{text}#{RESET}" if pct >= warn
+
+  text
 end
 
 # Monochrome meter. fill = fraction used; cells beyond pace_frac render hatched.
@@ -135,7 +153,8 @@ begin
 
   fh = rl["five_hour"]
   if typed?(rl, "five_hour", Hash, "five_hour") && typed?(fh, "used_percentage", Numeric, "five_hour.used_percentage")
-    seg = "ses #{fh['used_percentage'].round}%"
+    ses = fh["used_percentage"].round
+    seg = "ses #{sev("#{ses}%", ses, warn: 80, crit: 92)}"
     seg += " #{fmt_dur(fh['resets_at'] - now)}" if typed?(fh, "resets_at", Numeric, "five_hour.resets_at")
     parts << seg
   end
@@ -154,7 +173,8 @@ begin
         cw["total_input_tokens"].to_f / cw["context_window_size"] * 100
       end
     if ctx
-      seg  = "ctx #{ctx.round}%"
+      pct  = ctx.round
+      seg  = "ctx #{sev("#{pct}%", pct, warn: 70, crit: 90)}"
       size = fmt_size(cw["context_window_size"])
       seg += " #{size}" if size
       parts << seg
@@ -174,15 +194,18 @@ begin
     # is ~55 chars; reserve 56 for a column of slack. (On wide terminals the bar
     # is capped at 40 anyway, so this only bites below ~96 cols.)
     width = [[cols - 56, 40].min, 16].max
+    # Threshold on the displayed (rounded) value so the colour never disagrees
+    # with the number; hoisted so both branches share one 75/90 definition.
+    wk = sev("#{used.round}%", used.round, warn: 75, crit: 90)
     if typed?(sd, "resets_at", Numeric, "seven_day.resets_at")
       reset     = sd["resets_at"]
       pace      = ((now - (reset - WEEK)).to_f / WEEK).clamp(0.0, 1.0)
       days_left = [(reset - now).to_f / 86_400, 0.0001].max
       day       = [100 - used, (100 - used) / days_left].min.clamp(0, 100)
-      parts << "wk #{meter(used / 100.0, pace, width)} #{used.round}% #{fmt_dur(reset - now)}"
+      parts << "wk #{meter(used / 100.0, pace, width)} #{wk} #{fmt_dur(reset - now)}"
       parts << "day #{day.round}%"
     else
-      parts << "wk #{meter(used / 100.0, nil, width)} #{used.round}%"
+      parts << "wk #{meter(used / 100.0, nil, width)} #{wk}"
     end
   end
 
