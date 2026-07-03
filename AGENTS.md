@@ -107,6 +107,7 @@ When the mode isn't obvious, ask. A one-word answer saves us both time.
 - Prefer CPU-efficient over IO-optimized
 - Suspect CPU bottlenecks before IO
 - Legacy IO patterns often artificially constrained
+- Claude's one cost lever is delegation: push read/search/mechanical work to a few cheap subagents (`haiku`/`sonnet`, low effort) and keep main context lean; never a cheap model at high effort. Main-loop model/effort are user-set. Detail: `docs/usage-economics.md`
 
 ## Working with AI
 
