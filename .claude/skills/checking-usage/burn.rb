@@ -20,6 +20,12 @@ require "json"
 module Burn
   module_function
 
+  # Noise guards. Weekly % is a coarse integer, so it wiggles +-1 between renders;
+  # without these a 1-point blip over two minutes extrapolates to an absurd rate.
+  DROP_RESET = (ENV["USAGE_BURN_DROP_RESET"] || "5").to_f   # a wk fall bigger than this = a real reset, not noise
+  MIN_SPAN_H = (ENV["USAGE_BURN_MIN_SPAN_H"] || "2").to_f   # need this many hours of run before a slope is trustworthy
+  MIN_DELTA  = (ENV["USAGE_BURN_MIN_DELTA"]  || "3").to_f   # and this much net climb (else it's within rounding noise)
+
   # => Array of recent, well-formed samples (chronological); [] when there's no
   # history yet; nil when the file exists with content but nothing parses (schema
   # drift / corruption) or can't be read at all. Never raises.
@@ -43,8 +49,10 @@ module Burn
     nil  # a bad line is dropped, not fatal; read() flags an all-bad file as nil
   end
 
-  # The longest trailing run that is non-decreasing in weekly % AND shares one
-  # reset window -- i.e. everything since the most recent reset boundary.
+  # The longest trailing run since the most recent reset boundary. A reset is a
+  # BIG drop (> DROP_RESET) or a change of reset window -- small -1 dips are
+  # rounding noise and stay inside the run (netted out by first->last), so a blip
+  # can't fragment the history into a tiny, over-steep run.
   def current_run(entries)
     return entries if entries.size < 2
 
@@ -52,7 +60,7 @@ module Burn
     (entries.size - 1).downto(1) do |i|
       cur = entries[i]
       prev = entries[i - 1]
-      break if cur["wk"] < prev["wk"]                # weekly fell -> a reset landed here
+      break if cur["wk"] < prev["wk"] - DROP_RESET   # weekly fell hard -> a reset landed here
       break if cur["wk_reset"] != prev["wk_reset"]   # window changed -> new week
 
       start = i - 1
@@ -73,7 +81,9 @@ module Burn
     last = run.last
     dt_h = (last["t"] - first["t"]) / 3600.0
     dpct = last["wk"] - first["wk"]
-    return nil if dt_h <= 0 || dpct <= 0            # flat / just reset: nothing to project
+    # Need a real climb over a real span: too little of either and the slope is
+    # noise, not a trend. Better to project nothing than to cry wolf.
+    return nil if dt_h < MIN_SPAN_H || dpct < MIN_DELTA
 
     burn = dpct / dt_h
     { burn_per_h: burn, hours_to_cap: (100.0 - last["wk"]) / burn, wk: last["wk"] }

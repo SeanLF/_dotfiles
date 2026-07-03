@@ -24,7 +24,12 @@ HISTORY = File.expand_path(ENV["USAGE_HISTORY"] || "~/.claude/rate-limit-history
 SESSION_FULL = (ENV["USAGE_SESSION_FULL"] || "92").to_f   # 5h window effectively spent
 WEEKLY_LOW   = (ENV["USAGE_WEEKLY_LOW"]   || "90").to_f   # weekly budget genuinely low
 STALE_SECS   = (ENV["USAGE_STALE_SECS"]   || "900").to_i  # 15 min -> warn the number is old
-WEEK         = 7 * 86_400
+# Reset-proximity: burning fast is only a problem if it strands you IDLE for a
+# meaningful stretch before the window resets. Unspent budget near a reset is
+# use-it-or-lose-it, so we don't nag a deliberate burn-down.
+IDLE_WARN_SECS  = (ENV["USAGE_IDLE_WARN_H"]     || "24").to_f * 3600  # idle-before-reset that earns a PACE DOWN
+COAST_SECS      = (ENV["USAGE_COAST_H"]         || "12").to_f * 3600  # reset this close -> COAST, don't WIND DOWN
+WEEK            = 7 * 86_400
 
 def fmt_dur(secs)
   secs = secs.to_i
@@ -131,10 +136,16 @@ if wk_used
     entries = Burn.read(HISTORY, now.to_i)
     proj    = Burn.project(entries)
     if proj
-      secs_to_cap = proj[:hours_to_cap] * 3600
-      burn_warn   = secs_to_cap < (wk_reset - now.to_i)
-      tail = burn_warn ? "BEFORE the reset -- ease off" : "after the reset -- fine"
-      lines << format("         burn: ~%.2f%%/h -> hits the cap in ~%s, %s", proj[:burn_per_h], fmt_dur(secs_to_cap), tail)
+      secs_to_cap   = proj[:hours_to_cap] * 3600
+      time_to_reset = wk_reset - now.to_i
+      idle          = time_to_reset - secs_to_cap  # how long you'd be throttled before the reset
+      if secs_to_cap >= time_to_reset
+        lines << format("         burn: ~%.1f%%/h -> resets before you'd reach the cap, fine", proj[:burn_per_h])
+      else
+        burn_warn = idle > IDLE_WARN_SECS
+        tail = burn_warn ? "~#{fmt_dur(idle)} idle before reset -- ease off" : "just shy of reset -> burn it down freely"
+        lines << format("         burn: ~%.1f%%/h -> hits cap in ~%s, %s", proj[:burn_per_h], fmt_dur(secs_to_cap), tail)
+      end
     elsif entries.nil?
       lines << "         burn: history unreadable -- projection unavailable (not a clear signal)"
     end
@@ -155,6 +166,9 @@ verdict =
     rst  = ses_reset ? " (resets in #{fmt_dur(ses_reset - now.to_i)})" : ""
     "SESSION-LIMITED -- 5h window almost full#{rst}. TEMPORARY: pause and resume " \
       "after the session resets. Do NOT call the work done while #{left} of the weekly pool remains."
+  elsif wk_used && wk_used >= WEEKLY_LOW && wk_reset && (wk_reset - now.to_i) <= COAST_SECS
+    "COAST -- weekly is nearly spent (#{wk_left}% left) but it resets in " \
+      "#{fmt_dur(wk_reset - now.to_i)}. Unspent budget is use-it-or-lose-it, so spend the rest freely."
   elsif wk_used && wk_used >= WEEKLY_LOW
     "WIND DOWN -- weekly pool is nearly spent (#{wk_left}% left). " \
       "Land what's in flight and stop for the week."
@@ -162,8 +176,8 @@ verdict =
     "UNKNOWN -- payload had no budget data. Don't guess; re-render the status line."
   elsif burn_warn
     head = wk_left ? "#{wk_left}% weekly headroom now" : "weekly headroom now"
-    "PACE DOWN -- #{head}, but at your recent burn the weekly cap arrives before the " \
-      "reset. Keep going, just spread the spend so you don't throttle later in the week."
+    "PACE DOWN -- #{head}, but at your recent burn you'd hit the weekly cap well before " \
+      "the reset and sit throttled. Keep going, just spread the spend across the week."
   else
     head = wk_left ? "#{wk_left}% weekly headroom" : "weekly budget healthy"
     "KEEP GOING -- #{head}; session has room. Spend the budget you were asked to spend."
