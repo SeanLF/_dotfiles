@@ -21,6 +21,7 @@
 # silently break the gauge with no trace. Watch it with:
 #   tail -f ~/.claude/statusline.log
 require "json"
+require "time"
 
 EIGHTHS = [" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉", "█"].freeze
 SOLID   = "█"  # used, on pace
@@ -31,6 +32,18 @@ YELLOW  = "\e[93m"
 RED     = "\e[91m"  # bright, so it stays legible on dark backgrounds
 SEP     = " \e[2m·\e[22m "  # faint dot between timescale groups (recedes; content pops)
 WEEK    = 7 * 86_400  # seconds in the seven_day window
+# Claude Code caches the whole conversation and, on a Claude subscription, requests
+# the 1h prompt-cache TTL (verified: usage.cache_creation shows ephemeral_1h). Each
+# turn refreshes it; idle past the TTL makes the NEXT message re-send the entire
+# prefix uncached (~2x write vs ~0.1x read) -- very expensive on a long conversation,
+# and Claude Code gives NO warning (its docs point you to a status line instead). We
+# surface the countdown ONLY as it runs low. Caveat: once you're over your plan limit
+# (on paid usage credits) CC drops the TTL to 5m -- set USAGE_CACHE_TTL_SECS=300 then.
+# NB the countdown only stays live while idle if the status line has a refreshInterval
+# set (otherwise it freezes at the last render); see settings.json.
+CACHE_TTL  = (ENV["USAGE_CACHE_TTL_SECS"]  || "3600").to_i
+CACHE_WARN = (ENV["USAGE_CACHE_WARN_SECS"] || "900").to_i  # show the segment once under this
+CACHE_CRIT = (ENV["USAGE_CACHE_CRIT_SECS"] || "180").to_i  # red (not yellow) under this
 LOG     = File.expand_path(ENV["STATUSLINE_LOG"] || "~/.claude/statusline.log")
 # The live rate-limit payload only ever reaches this status line process; nothing
 # else on the machine can see it on demand. So we mirror it to a cache file every
@@ -73,6 +86,35 @@ def fmt_dur(secs)
   return "#{h}h#{m}m" if h.positive?
 
   "#{m}m"
+end
+
+# Unix time of the last message in this session's transcript, read from the file's
+# tail so a multi-MB conversation doesn't get slurped on the hot render path. This
+# anchors the prompt-cache countdown -- the cache TTL is refreshed each turn, so it
+# expires CACHE_TTL after the last one. nil if the path/timestamp isn't readable.
+def last_activity(path)
+  return nil unless path.is_a?(String) && File.exist?(path)
+
+  tail = File.open(path, "rb") do |f|
+    f.seek([f.size - 4096, 0].max)
+    f.read
+  end
+  line = tail.to_s.lines.reverse_each.find { |l| l.include?('"timestamp"') }
+  return nil unless line
+
+  ts = JSON.parse(line)["timestamp"]
+  return Time.parse(ts).to_i if ts.is_a?(String)  # ISO8601 w/ zone -> correct epoch
+
+  log("warn", "transcript timestamp is #{ts.class}, expected String")
+  nil
+rescue JSON::ParserError, ArgumentError => e
+  # Present but unparseable: a Claude Code schema change (renamed field, or zoneless
+  # timestamps that would skew the epoch) would silently kill the HIDDEN cache
+  # warning with no symptom -- so log it like the file's other drift guards.
+  log("warn", "transcript timestamp unparseable: #{e.class}: #{e.message}")
+  nil
+rescue StandardError
+  nil  # transient IO (deleted mid-read, perms) -> omit, expected, don't spam the log
 end
 
 # Compact token count for a context-window size: 1000000 -> "1M", 200000 -> "200k".
@@ -234,15 +276,28 @@ begin
     end
   end
 
+  # Prompt-cache countdown (session-local, own transcript). Shown ONLY as it nears
+  # expiry -- fresh cache stays hidden, so no clutter or width cost in the common
+  # case; it appears (yellow, then red under 3m, then "cold") when it's time to
+  # send-to-keep-warm or accept the re-cache cost on the next message.
+  if (ts = last_activity(data["transcript_path"]))
+    left = ts + CACHE_TTL - now
+    if left <= 0
+      now_grp << "cache #{RED}cold#{RESET}"
+    elsif left < CACHE_WARN
+      now_grp << "cache #{left < CACHE_CRIT ? RED : YELLOW}#{fmt_dur(left)}#{RESET}"
+    end
+  end
+
   sd = rl["seven_day"]
   if typed?(rl, "seven_day", Hash, "seven_day") && typed?(sd, "used_percentage", Numeric, "seven_day.used_percentage")
     used  = sd["used_percentage"]
     # Reserve enough columns for the surrounding text so the bar never pushes the
-    # line past COLUMNS and wraps. Widest non-bar case -- everything at 100% with
-    # long durations and both group separators, "ctx 100% 200k · ses 100% 4h59m ·
-    # wk  100% 6d23h  day 100%" -- is ~57 chars; reserve 58 for a column of slack.
-    # (On wide terminals the bar is capped at 40 anyway, so this bites below ~98.)
-    width = [[cols - 58, 40].min, 16].max
+    # line past COLUMNS and wraps. Widest non-bar case -- everything at 100%, long
+    # durations, both separators, AND the usually-hidden cache segment: "ctx 100%
+    # 200k  cache cold · ses 100% 4h59m · wk  100% 6d23h  day 100%" -- is ~69 chars;
+    # reserve 70. (On wide terminals the bar caps at 40 anyway, so this bites <110.)
+    width = [[cols - 70, 40].min, 16].max
     # Threshold on the displayed (rounded) value so the colour never disagrees
     # with the number; hoisted so both branches share one 75/90 definition.
     wk = sev("#{used.round}%", used.round, warn: 75, crit: 90)

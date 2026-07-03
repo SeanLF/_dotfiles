@@ -59,7 +59,8 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "ruby ~/.claude/statusline-command.rb"
+    "command": "ruby ~/.claude/statusline-command.rb",
+    "refreshInterval": 10
   },
   "enabledPlugins": {
     "frontend-design@claude-plugins-official": true,
