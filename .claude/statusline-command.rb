@@ -57,6 +57,10 @@ CACHE   = File.expand_path(ENV["USAGE_CACHE"] || "~/.claude/usage-cache.json")
 # turns into a burn rate ("weekly hits the cap in ~Xh"). Deduped so the constant
 # re-renders don't spam it -- a sample lands only when a number actually moves.
 HISTORY = File.expand_path(ENV["USAGE_HISTORY"] || "~/.claude/rate-limit-history.jsonl")
+# Subscription tier is NOT in the hook payload (can't be auto-detected), so it's set
+# here and updated by hand on a plan change. Stamped into each history sample so a
+# reader can turn weekly-% into a tier-relative cost. See _dotfiles/docs/usage-economics.md.
+TIER = (ENV["USAGE_TIER"] || "max_20x").freeze
 
 # Best-effort anomaly log: never raises, capped to the last 200 lines. The happy
 # path writes nothing -- only malformed input or unexpected errors land here.
@@ -229,13 +233,27 @@ end
 # Append-only single-line writes are atomic across the concurrent windows that all
 # render this bar, so no locking. rate_limits is account-global, so every window
 # records the same series -- dedup makes the duplicates harmless.
-def record_history(rl, now)
+#
+# We also stamp tier + the rendering session's cumulative cost so a reader can turn
+# weekly-% into a tier-relative dollar figure. Caveats: `tier` is a manual constant;
+# `cost` is that ONE session's running total_cost_usd (tagged by `session`), NOT the
+# weekly cross-session total -- ccusage stays authoritative for spend. And because
+# dedup keys on wk only across all concurrent sessions, the first to reach a given
+# wk% wins that sample, so any one session's cost slice is sparse.
+def record_history(rl, data, now)
   sd = rl["seven_day"]
   return unless sd.is_a?(Hash) && sd["used_percentage"].is_a?(Numeric)
 
   entry = { "t" => now, "wk" => sd["used_percentage"], "wk_reset" => sd["resets_at"] }
   fh = rl["five_hour"]
   entry["ses"] = fh["used_percentage"] if fh.is_a?(Hash) && fh["used_percentage"].is_a?(Numeric)
+
+  entry["tier"] = TIER
+  if data.is_a?(Hash)
+    cost = data["cost"]
+    entry["cost"] = cost["total_cost_usd"] if cost.is_a?(Hash) && cost["total_cost_usd"].is_a?(Numeric)
+    entry["session"] = data["session_id"] if data["session_id"].is_a?(String)
+  end
 
   last = last_history_entry
   return if last && last["wk"] == entry["wk"] && last["wk_reset"] == entry["wk_reset"]
@@ -272,7 +290,7 @@ begin
   cols = (ENV["COLUMNS"] || "120").to_i
 
   cache_usage(data, now)
-  record_history(rl, now)
+  record_history(rl, data, now)
 
   fh = rl["five_hour"]
   if typed?(rl, "five_hour", Hash, "five_hour") && typed?(fh, "used_percentage", Numeric, "five_hour.used_percentage")
