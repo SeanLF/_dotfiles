@@ -30,6 +30,7 @@ TRACK   = "░"  # remaining
 RESET   = "\e[0m"
 YELLOW  = "\e[93m"
 RED     = "\e[91m"  # bright, so it stays legible on dark backgrounds
+BOLD    = "\e[1m"   # paired with RED for the loudest tier (cache critical/cold)
 SEP     = " \e[2m·\e[22m "  # faint dot between timescale groups (recedes; content pops)
 WEEK    = 7 * 86_400  # seconds in the seven_day window
 # Claude Code caches the whole conversation and, on a Claude subscription, requests
@@ -37,13 +38,14 @@ WEEK    = 7 * 86_400  # seconds in the seven_day window
 # turn refreshes it; idle past the TTL makes the NEXT message re-send the entire
 # prefix uncached (~2x write vs ~0.1x read) -- very expensive on a long conversation,
 # and Claude Code gives NO warning (its docs point you to a status line instead). We
-# surface the countdown ONLY as it runs low. Caveat: once you're over your plan limit
-# (on paid usage credits) CC drops the TTL to 5m -- set USAGE_CACHE_TTL_SECS=300 then.
-# NB the countdown only stays live while idle if the status line has a refreshInterval
-# set (otherwise it freezes at the last render); see settings.json.
-CACHE_TTL  = (ENV["USAGE_CACHE_TTL_SECS"]  || "3600").to_i
-CACHE_WARN = (ENV["USAGE_CACHE_WARN_SECS"] || "900").to_i  # show the segment once under this
-CACHE_CRIT = (ENV["USAGE_CACHE_CRIT_SECS"] || "180").to_i  # red (not yellow) under this
+# surface the countdown ONLY as it runs low. The live TTL is DETECTED from the
+# transcript's cache buckets (CC drops 1h -> 5m once you're on paid usage credits);
+# CACHE_TTL is only the fallback when detection can't read a bucket. NB the countdown
+# only stays live while idle if the status line has a refreshInterval set (otherwise
+# it freezes at the last render); see settings.json.
+CACHE_TTL  = (ENV["USAGE_CACHE_TTL_SECS"]  || "3600").to_i  # fallback when TTL undetectable
+CACHE_WARN = (ENV["USAGE_CACHE_WARN_SECS"] || "900").to_i   # show the segment once under this
+CACHE_CRIT = (ENV["USAGE_CACHE_CRIT_SECS"] || "180").to_i   # bold red (not yellow) under this
 LOG     = File.expand_path(ENV["STATUSLINE_LOG"] || "~/.claude/statusline.log")
 # The live rate-limit payload only ever reaches this status line process; nothing
 # else on the machine can see it on demand. So we mirror it to a cache file every
@@ -88,31 +90,61 @@ def fmt_dur(secs)
   "#{m}m"
 end
 
-# Unix time of the last message in this session's transcript, read from the file's
-# tail so a multi-MB conversation doesn't get slurped on the hot render path. This
-# anchors the prompt-cache countdown -- the cache TTL is refreshed each turn, so it
-# expires CACHE_TTL after the last one. nil if the path/timestamp isn't readable.
-def last_activity(path)
+# Last-activity time AND the active prompt-cache TTL, both from the transcript's
+# tail (read big enough to catch a full turn without slurping a multi-MB file on
+# the hot render path; a rare >32KB final message just yields nil -> segment hidden).
+# We DETECT the TTL rather than guess: Claude Code writes each turn's cache increment
+# to the ephemeral_1h or ephemeral_5m bucket depending on which TTL is in force (1h
+# on a subscription, 5m once you're on paid usage credits), so the buckets are the
+# ground truth. => [epoch, ttl_or_nil]; ttl nil when undetectable (caller falls back
+# to CACHE_TTL). nil overall when there's no usable timestamp.
+def cache_state(path)
   return nil unless path.is_a?(String) && File.exist?(path)
 
   tail = File.open(path, "rb") do |f|
-    f.seek([f.size - 4096, 0].max)
+    f.seek([f.size - 32_768, 0].max)
     f.read
   end
-  line = tail.to_s.lines.reverse_each.find { |l| l.include?('"timestamp"') }
-  return nil unless line
+  lines = tail.to_s.lines
+  lines.shift if tail.bytesize >= 32_768 && lines.size > 1  # drop the boundary-cut fragment
+  entries = lines.filter_map do |l|
+    obj = JSON.parse(l) rescue nil
+    obj if obj.is_a?(Hash)
+  end
 
-  ts = JSON.parse(line)["timestamp"]
-  return Time.parse(ts).to_i if ts.is_a?(String)  # ISO8601 w/ zone -> correct epoch
+  ts_entry = entries.reverse_each.find { |e| e["timestamp"].is_a?(String) }
+  unless ts_entry
+    # Content present but no timestamp -> a field rename would silently kill the
+    # (hidden) cache warning, so log it like the file's other drift guards.
+    log("warn", "transcript tail has no parseable timestamp entry") unless entries.empty?
+    return nil
+  end
 
-  log("warn", "transcript timestamp is #{ts.class}, expected String")
-  nil
-rescue JSON::ParserError, ArgumentError => e
-  # Present but unparseable: a Claude Code schema change (renamed field, or zoneless
-  # timestamps that would skew the epoch) would silently kill the HIDDEN cache
-  # warning with no symptom -- so log it like the file's other drift guards.
-  log("warn", "transcript timestamp unparseable: #{e.class}: #{e.message}")
-  nil
+  ts = begin
+    Time.parse(ts_entry["timestamp"]).to_i  # ISO8601 w/ zone -> correct epoch
+  rescue ArgumentError => e
+    log("warn", "transcript timestamp unparseable: #{e.message}")
+    return nil
+  end
+
+  # Newest turn that wrote to a cache bucket decides the TTL; older turns share it
+  # unless the credit state flipped mid-session (then the newest is what's live).
+  ttl = nil
+  entries.reverse_each do |e|
+    msg = e["message"]
+    usg = msg["usage"] if msg.is_a?(Hash)          # type-guarded nav (no dig) so a
+    cc  = usg["cache_creation"] if usg.is_a?(Hash) # non-Hash message can't raise
+    next unless cc.is_a?(Hash)
+
+    if cc["ephemeral_5m_input_tokens"].to_i.positive?
+      ttl = 300
+      break
+    elsif cc["ephemeral_1h_input_tokens"].to_i.positive?
+      ttl = 3600
+      break
+    end
+  end
+  [ts, ttl]
 rescue StandardError
   nil  # transient IO (deleted mid-read, perms) -> omit, expected, don't spam the log
 end
@@ -280,12 +312,14 @@ begin
   # expiry -- fresh cache stays hidden, so no clutter or width cost in the common
   # case; it appears (yellow, then red under 3m, then "cold") when it's time to
   # send-to-keep-warm or accept the re-cache cost on the next message.
-  if (ts = last_activity(data["transcript_path"]))
-    left = ts + CACHE_TTL - now
+  if (st = cache_state(data["transcript_path"]))
+    ts, ttl = st
+    left = ts + (ttl || CACHE_TTL) - now
     if left <= 0
-      now_grp << "cache #{RED}cold#{RESET}"
+      now_grp << "cache #{BOLD}#{RED}cold#{RESET}"
     elsif left < CACHE_WARN
-      now_grp << "cache #{left < CACHE_CRIT ? RED : YELLOW}#{fmt_dur(left)}#{RESET}"
+      col = left < CACHE_CRIT ? "#{BOLD}#{RED}" : YELLOW  # bold red is the loudest tier
+      now_grp << "cache #{col}#{fmt_dur(left)}#{RESET}"
     end
   end
 
