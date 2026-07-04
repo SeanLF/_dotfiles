@@ -39,6 +39,8 @@ STALE_SECS    = (ENV["USAGE_PACE_STALE_SECS"]    || "3600").to_i # ignore data o
 THROTTLE_SECS = (ENV["USAGE_PACE_THROTTLE_SECS"] || "1800").to_i # min gap between weekly warnings
 CTX_WARN      = (ENV["USAGE_CTX_WARN"]           || "85").to_f   # context % that trips a compaction warning
 CTX_THROTTLE  = (ENV["USAGE_CTX_THROTTLE_SECS"]  || "600").to_i  # min gap between compaction warnings (more urgent)
+COAST_SECS    = (ENV["USAGE_PACE_COAST_SECS"]    || "43200").to_i # reset this close (12h) -> unspent is use-it-or-lose-it, so don't pace-nag
+SES_WARN      = (ENV["USAGE_SES_WARN"]           || "85").to_f   # 5h session % that trips an auto-throttle heads-up
 TMP           = ENV["TMPDIR"] || "/tmp"
 WEEK          = 7 * 86_400
 PER_DAY       = 100.0 / 7 # ~14.29% of the weekly pool granted per day
@@ -55,10 +57,12 @@ def fmt_dur(secs)
   return "now" if secs <= 0
 
   d, r = secs.divmod(86_400)
-  h = r / 3_600
+  h, r = r.divmod(3_600)
+  m, = r.divmod(60)
   return "#{d}d#{h}h" if d.positive?
+  return "#{h}h#{m}m" if h.positive?
 
-  "#{h}h"
+  "#{m}m"
 end
 
 def fmt_size(n)
@@ -107,19 +111,43 @@ wk_reset = num(weekly, "resets_at")
 # millisecond epoch from a writer change) is bad data -- skip rather than misfire.
 if wk_used && wk_reset && wk_used.between?(0, 100) &&
    wk_reset.between?(now - 86_400, now + WEEK + 86_400)
+  to_reset  = wk_reset - now
   day       = ((now - (wk_reset - WEEK)).to_f / 86_400).ceil.clamp(1, 7)
   allowance = day * PER_DAY
-  if wk_used > allowance
+  # Near a reset, unspent weekly budget is use-it-or-lose-it, so being "over" the
+  # cumulative daily share is not a problem -- suppress the pace nag entirely
+  # rather than push a cautious model to wind down when it should burn down.
+  if wk_used > allowance && to_reset > COAST_SECS
     over = (wk_used - allowance).ceil
     warnings << Warn.new("pace", THROTTLE_SECS, format(
-      "[usage-pace] WEEKLY budget over the daily allowance: %d%% used vs %d%% allowed " \
-      "by day %d of 7 (~14.3%%/day; resets in %s) -- ~%dpts over. You have spent more " \
-      "than your cumulative daily share -- prefer landing in-flight work over starting " \
-      "new threads, and check " \
-      "`ruby ~/.claude/skills/checking-usage/usage.rb` before any big push.",
-      wk_used.round, allowance.round, day, fmt_dur(wk_reset - now), over
+      "[usage-pace] WEEKLY pace: %d%% used vs ~%d%% (your day-%d/7 share, ~14.3%%/day; " \
+      "resets in %s) -- ~%dpts ahead. This is a PACE signal, NOT a stop order. Weigh the cost: " \
+      "if finishing the current task is cheaper than a clean handover, push through -- a cold " \
+      "restart pays to rebuild context. If you do stop, checkpoint properly: update the relevant " \
+      "docs and leave a handover note so the next session resumes cheaply; don't just drop it " \
+      "mid-task. Running unattended, aim for a comfortable checkpoint as you near the limit, not " \
+      "the moment you cross the share. Run `ruby ~/.claude/skills/checking-usage/usage.rb` " \
+      "before a big new push.",
+      wk_used.round, allowance.round, day, fmt_dur(to_reset), over
     ))
   end
+end
+
+# --- 5h SESSION window nearing full (account-global -> always OK to read). A long
+# or looping session that saturates this auto-throttles; a heads-up lets it land
+# work before the pause instead of getting cut mid-task. Not "done for the week" --
+# the 5h window resets in hours, so it is a short wait if the weekly pool has room. ---
+session   = rl.is_a?(Hash) ? rl["five_hour"] : nil
+ses_used  = num(session, "used_percentage")
+ses_reset = num(session, "resets_at")
+if ses_used && ses_reset && ses_used.between?(0, 100) && ses_used >= SES_WARN &&
+   ses_reset.between?(now, now + 6 * 3_600)
+  warnings << Warn.new("session", THROTTLE_SECS, format(
+    "[usage-session] 5h SESSION window at %d%% (resets in %s) -- you will auto-throttle soon. " \
+    "Land or checkpoint in-flight work before the pause. This is a short wait, not done for " \
+    "the week, if the weekly pool still has room.",
+    ses_used.round, fmt_dur(ses_reset - now)
+  ))
 end
 
 # --- CONTEXT nearing auto-compaction (session-local -> only if THIS session wrote the cache) ---

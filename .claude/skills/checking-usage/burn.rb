@@ -26,6 +26,13 @@ module Burn
   MIN_SPAN_H = (ENV["USAGE_BURN_MIN_SPAN_H"] || "2").to_f   # need this many hours of run before a slope is trustworthy
   MIN_DELTA  = (ENV["USAGE_BURN_MIN_DELTA"]  || "3").to_f   # and this much net climb (else it's within rounding noise)
 
+  # Short-horizon (5h SESSION) rate. The weekly two-point slope is too coarse for a
+  # window that moves in minutes, so we fit a line by least-squares over a trailing
+  # window: every sample pins the fit, so a lone +-1 integer wiggle can't swing it.
+  RECENT_SECS       = (ENV["USAGE_SES_WINDOW_SECS"] || "1800").to_f # trailing window to fit (30 min)
+  RECENT_MIN_SPAN_H = (ENV["USAGE_SES_MIN_SPAN_H"]  || "0.08").to_f # ~5 min of run before a slope is trustworthy
+  RECENT_MIN_DELTA  = (ENV["USAGE_SES_MIN_DELTA"]   || "2").to_f    # and this much climb (past integer noise)
+
   # => Array of recent, well-formed samples (chronological); [] when there's no
   # history yet; nil when the file exists with content but nothing parses (schema
   # drift / corruption) or can't be read at all. Never raises.
@@ -87,5 +94,58 @@ module Burn
 
     burn = dpct / dt_h
     { burn_per_h: burn, hours_to_cap: (100.0 - last["wk"]) / burn, wk: last["wk"] }
+  end
+
+  # The trailing run of a field since its last reset (a drop > DROP_RESET = the
+  # window rolled over). Parameterized by field so it works for "ses" as well as
+  # "wk"; unlike current_run it has no reset-window column to lean on (history only
+  # records wk_reset), so it detects a session reset purely from a drop in value.
+  def trailing_run(entries, field)
+    return entries if entries.size < 2
+
+    start = entries.size - 1
+    (entries.size - 1).downto(1) do |i|
+      break if entries[i][field].to_f < entries[i - 1][field].to_f - DROP_RESET
+      start = i - 1
+    end
+    entries[start..]
+  end
+
+  # Ordinary least-squares slope (units of field-% per hour) over a run. Robust to
+  # the integer wiggle that makes a two-point slope unreliable on a short span.
+  def lsq_slope(run, field)
+    n  = run.size.to_f
+    t0 = run.first["t"]
+    xs = run.map { |e| (e["t"] - t0) / 3600.0 } # hours since run start
+    ys = run.map { |e| e[field].to_f }
+    mx = xs.sum / n
+    my = ys.sum / n
+    den = xs.sum { |x| (x - mx)**2 }
+    return nil if den.zero?
+
+    xs.zip(ys).sum { |x, y| (x - mx) * (y - my) } / den
+  end
+
+  # Short-horizon projection for a fast window. Fits the trailing `window_secs` of
+  # samples carrying `field` and extrapolates to 100%.
+  # => { rate_per_h:, hours_to_cap:, val: } or nil when there's no real, positive
+  # climb over a real span (idle, flat, just-reset, or too few points to trust).
+  def project_recent(entries, now, field:, window_secs: RECENT_SECS)
+    return nil unless entries && !entries.empty?
+
+    recent = entries.select { |e| e["t"] >= now - window_secs && e[field].is_a?(Numeric) }
+    return nil if recent.size < 3
+
+    run = trailing_run(recent, field)
+    return nil if run.size < 3
+
+    span_h = (run.last["t"] - run.first["t"]) / 3600.0
+    delta  = run.last[field].to_f - run.first[field].to_f
+    return nil if span_h < RECENT_MIN_SPAN_H || delta < RECENT_MIN_DELTA
+
+    slope = lsq_slope(run, field)
+    return nil unless slope&.positive?
+
+    { rate_per_h: slope, hours_to_cap: (100.0 - run.last[field].to_f) / slope, val: run.last[field].to_f }
   end
 end
