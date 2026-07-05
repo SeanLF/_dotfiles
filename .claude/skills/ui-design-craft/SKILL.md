@@ -1,6 +1,6 @@
 ---
 name: ui-design-craft
-description: Use when building or refining web UI chrome and components (tables, badges, status indicators, focus states, colour tokens, dark mode, editorial layout) and you want evidence-grounded, non-templated design decisions instead of framework defaults or AI-default "warm editorial" clichés. A decision reference with vendor citations, not an essay.
+description: Use when building or refining web UI chrome and components (tables, badges, status indicators, focus states, colour tokens, dark mode, editorial layout, cross-page chrome consistency, theme toggles, CSS/font delivery) and you want evidence-grounded, non-templated design decisions instead of framework defaults or AI-default "warm editorial" clichés. A decision reference with vendor citations, not an essay.
 ---
 
 # UI design craft: evidence-grounded chrome decisions
@@ -157,6 +157,50 @@ Sourcing caution (verify before hardcoding):
   treating any specific value as canonical.
 - General rule: if a number would drive a layout decision, confirm it in the vendor's
   published docs or your own devtools, not a blog post.
+
+## 6. Multi-page chrome: verify consistency, don't eyeball it
+
+Shared chrome (top bar, nav, buttons, footer) that must be pixel-identical across many
+pages drifts invisibly. The eye and Lighthouse both miss it; measure it.
+
+- **Enforce shared chrome with a computed-style diff, not the eye.** Write a tiny script
+  that reads `getComputedStyle` for each shared element across every page and reports only
+  diverging properties; build it EARLY — chasing drift one property at a time is the
+  failure mode. **Computed-value match != visual match:** a naive metric set misses `gap`,
+  `line-height`, glyph `font-family`, and cluster spacing (e.g. the pill-to-toggle gap), so
+  pair the diff with a screenshot after any structural edit. Have it ignore inherited font
+  props on textless containers (false positives) and tag deliberate exceptions separately
+  from real drift.
+- **The unify/leave test: "deliberate + documented divergence" vs "accidental drift."** A
+  component that intentionally differs (an editorial content surface vs the app chrome) is
+  fine _if_ documented and coherent; the same visual difference arriving by accident is a
+  bug. That distinction is the rule for deciding what to unify.
+- **Containers inheriting the body's `line-height`/font silently inflate bars.** A nav whose
+  links inherit `line-height:1.6` (plus vertical padding) renders ~2x its text height —
+  taller top bar, masthead pushed down a few px. Chrome/label containers should set
+  `line-height:normal` and let the tallest control (pill/button) drive the bar height.
+  Sub-pixel header misalignment is almost always this.
+- **Three-state theme toggle is the correct default, not a light/dark flip.** Cycle
+  System -> Light -> Dark -> System, defaulting to System — a returnable state that
+  live-follows the OS (`matchMedia('change')` listener). Persist in `localStorage`, **not a
+  cookie** (never sent to the server -> no consent implication; a theme pref is strictly
+  functional; a cookie only buys server pre-render, rarely worth the plumbing). A
+  synchronous inline `<head>` script reads storage/system and sets the theme attribute
+  **before first paint** (no flash). The button must announce state — glyph + word + a
+  stateful `aria-label` ("Theme: System, activate for Light"); a mystery cycling glyph is a
+  known UX weakness. >=24px hit area.
+- **For Lighthouse, per-page INLINED critical CSS beats one shared stylesheet.** An external
+  shared sheet is render-blocking _and_ trips "Reduce unused CSS" per page; inlined critical
+  CSS is Google's own guidance and is why fully-inlined pages score 100. Resolve the
+  tension: **DRY at the source** (one tokens file) **, inline at the output** (compose per
+  page at render). Cache-busting then targets **fonts, not CSS** (inlined CSS has no file to
+  bust) — serve fonts at a content-hashed path with `immutable` long cache; do NOT
+  base64-inline fonts in production [Google web.dev critical-CSS guidance].
+- **Fragment vs standalone-document gotcha.** A page authored as an embeddable fragment (no
+  doctype/head/body — for a host that wraps it) lacks charset, viewport, and reset when
+  opened directly: glyphs mis-render, mobile breaks, and a wrapper-supplied landmark can
+  vanish. If it must also open standalone, wrap it in a full document with a minimal reset
+  (`body{margin:0}` — the browser-default 8px margin otherwise shifts everything).
 
 ## Sources
 
