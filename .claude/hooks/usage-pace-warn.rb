@@ -21,20 +21,24 @@
 #   day = ceil(days_elapsed_in_window) clamped 1..7 ; allowance = day/7 * 100
 # Warn only when used% exceeds that. Under it == banked breathing room, stay quiet.
 #
-# Data source: ~/.claude/usage-cache.json, mirrored by the status line every
-# render. rate_limits is account-global (trustworthy from any session), but
-# context_window is SESSION-LOCAL -- so the compaction check fires only when the
-# cache was last written by THIS session (session_id match); otherwise we can't
-# tell if the cached context is ours and we stay silent.
+# Data source: the per-session snapshots the status line writes every render
+# (usage-cache-<session_id>.json). rate_limits is ACCOUNT-GLOBAL but each snapshot is
+# frozen at a session's last API turn, so with N concurrent sessions a single shared
+# file is last-writer-wins across N staleness levels -- we reconcile across the
+# per-session files instead (current window + max used%, mirroring the checking-usage
+# reader; keep the two in sync). context_window is SESSION-LOCAL, so the compaction
+# check reads THIS session's OWN snapshot file directly (matched by session_id) --
+# reliable for every session now, not just whichever one last wrote a shared cache.
 #
 # No CLI/API exposes the live budget, so this is only as fresh as the last render:
 # mid-turn warnings work in interactive sessions (the bar re-renders on activity);
-# a pure background job with no TUI has a stale cache and we stay silent. Fails
+# a pure background job with no TUI has stale snapshots and we stay silent. Fails
 # open and SILENT throughout: missing/stale/garbled cache or any error emits
 # nothing, never a false alarm.
 require "json"
 
 CACHE         = File.expand_path(ENV["USAGE_CACHE"] || "~/.claude/usage-cache.json")
+CACHE_GLOB    = CACHE.sub(/\.json\z/, "-*.json")  # per-session snapshots
 STALE_SECS    = (ENV["USAGE_PACE_STALE_SECS"]    || "3600").to_i # ignore data older than this
 THROTTLE_SECS = (ENV["USAGE_PACE_THROTTLE_SECS"] || "1800").to_i # min gap between weekly warnings
 CTX_WARN      = (ENV["USAGE_CTX_WARN"]           || "85").to_f   # context % that trips a compaction warning
@@ -71,6 +75,37 @@ def fmt_size(n)
   n >= 1_000_000 ? "#{(n / 1_000_000.0).round}M" : "#{(n / 1000.0).round}k"
 end
 
+# All per-session snapshots (legacy single file as fallback before any re-render).
+# Garbled files skipped. => Array<Hash>. Mirrors checking-usage/usage.rb#load_snapshots.
+def load_snapshots
+  files = Dir.glob(CACHE_GLOB)
+  files = [CACHE] if files.empty? && File.exist?(CACHE)
+  files.filter_map do |f|
+    d = begin JSON.parse(File.read(f)) rescue nil end
+    d if d.is_a?(Hash)
+  end
+end
+
+# Reconcile one ACCOUNT-GLOBAL window across snapshots frozen at differing staleness:
+# trust only a still-ahead (plausible) reset -- dropping an idle session's expired 5h
+# window -- and take the MAX used% on the current window (monotonic -> freshest wins).
+# => [used, reset] or [nil, nil]. Mirrors checking-usage/usage.rb#reconcile_window.
+def reconcile_window(snaps, key, now, max_ahead)
+  live = snaps.filter_map do |d|
+    rl = d["rate_limits"]
+    w  = rl.is_a?(Hash) ? rl[key] : nil
+    next unless w.is_a?(Hash) && w["used_percentage"].is_a?(Numeric)
+    r = w["resets_at"]
+    next unless r.is_a?(Numeric) && r > now && r <= now + max_ahead
+    { used: w["used_percentage"], reset: r }
+  end
+  return [nil, nil] if live.empty?
+
+  reset = live.map { |e| e[:reset] }.max
+  best  = live.select { |e| e[:reset] == reset }.max_by { |e| e[:used] }
+  [best[:used], best[:reset]]
+end
+
 # Read the hook payload to learn which event fired and the session (raw, for the
 # session-local context match; sanitized, for the throttle marker filename).
 payload = begin
@@ -83,34 +118,25 @@ event      = payload["hook_event_name"].is_a?(String) ? payload["hook_event_name
 session_id = payload["session_id"].is_a?(String) ? payload["session_id"] : nil
 marker_key = (session_id || "global").gsub(/[^\w.-]/, "")
 
-bail unless File.exist?(CACHE)
-
-data = begin
-  JSON.parse(File.read(CACHE))
-rescue StandardError
-  bail
-end
-
-captured = num(data, "captured_at")
-bail if captured.nil?
+snaps = load_snapshots
+bail if snaps.empty?
 
 now = Time.now.to_i
-bail if now - captured > STALE_SECS # too old to trust; don't risk a false warning
+# Account-global freshness = the most recent render across ALL sessions (captured_at
+# is render time, not data age). If nothing has rendered recently, the reconciled
+# budget is too old to warn on -- stay silent rather than risk a stale false warning.
+account_captured = snaps.filter_map { |d| num(d, "captured_at") }.max
+account_fresh    = account_captured && (now - account_captured <= STALE_SECS)
 
 # Each warning is an independent signal (its own throttle marker) so a fine weekly
 # budget never suppresses a compaction warning, or vice versa.
 Warn = Struct.new(:key, :throttle, :text)
 warnings = []
 
-# --- WEEKLY budget vs cumulative daily allowance (account-global -> always OK to read) ---
-rl     = data["rate_limits"]
-weekly = rl.is_a?(Hash) ? rl["seven_day"] : nil
-wk_used  = num(weekly, "used_percentage")
-wk_reset = num(weekly, "resets_at")
-# Plausibility guards: a used% outside 0..100 or a reset not within ~a week (e.g. a
-# millisecond epoch from a writer change) is bad data -- skip rather than misfire.
-if wk_used && wk_reset && wk_used.between?(0, 100) &&
-   wk_reset.between?(now - 86_400, now + WEEK + 86_400)
+# --- WEEKLY budget vs cumulative daily allowance (account-global -> reconciled across
+# sessions; reconcile_window guarantees a plausible still-ahead reset) ---
+wk_used, wk_reset = account_fresh ? reconcile_window(snaps, "seven_day", now, WEEK + 86_400) : [nil, nil]
+if wk_used && wk_reset && wk_used.between?(0, 100)
   to_reset  = wk_reset - now
   day       = ((now - (wk_reset - WEEK)).to_f / 86_400).ceil.clamp(1, 7)
   allowance = day * PER_DAY
@@ -137,11 +163,8 @@ end
 # or looping session that saturates this auto-throttles; a heads-up lets it land
 # work before the pause instead of getting cut mid-task. Not "done for the week" --
 # the 5h window resets in hours, so it is a short wait if the weekly pool has room. ---
-session   = rl.is_a?(Hash) ? rl["five_hour"] : nil
-ses_used  = num(session, "used_percentage")
-ses_reset = num(session, "resets_at")
-if ses_used && ses_reset && ses_used.between?(0, 100) && ses_used >= SES_WARN &&
-   ses_reset.between?(now, now + 6 * 3_600)
+ses_used, ses_reset = account_fresh ? reconcile_window(snaps, "five_hour", now, 6 * 3_600) : [nil, nil]
+if ses_used && ses_reset && ses_used.between?(0, 100) && ses_used >= SES_WARN
   warnings << Warn.new("session", THROTTLE_SECS, format(
     "[usage-session] 5h SESSION window at %d%% (resets in %s) -- you will auto-throttle soon. " \
     "Land or checkpoint in-flight work before the pause. This is a short wait, not done for " \
@@ -150,9 +173,12 @@ if ses_used && ses_reset && ses_used.between?(0, 100) && ses_used >= SES_WARN &&
   ))
 end
 
-# --- CONTEXT nearing auto-compaction (session-local -> only if THIS session wrote the cache) ---
-cw = data["context_window"]
-if session_id && data["session_id"] == session_id && cw.is_a?(Hash)
+# --- CONTEXT nearing auto-compaction (session-local -> read THIS session's OWN
+# snapshot directly, matched by session_id, with its own freshness gate) ---
+own     = session_id ? snaps.find { |d| d["session_id"] == session_id } : nil
+own_cap = num(own, "captured_at")             # num self-guards a nil own
+cw      = own && own["context_window"]        # load_snapshots yields only Hashes
+if own_cap && now - own_cap <= STALE_SECS && cw.is_a?(Hash)
   ctx  = num(cw, "used_percentage")
   size = fmt_size(num(cw, "context_window_size"))
   if ctx && ctx.between?(0, 100) && ctx >= CTX_WARN

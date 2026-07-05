@@ -17,8 +17,9 @@
 require "json"
 require_relative "burn"
 
-CACHE   = File.expand_path(ENV["USAGE_CACHE"] || "~/.claude/usage-cache.json")
-HISTORY = File.expand_path(ENV["USAGE_HISTORY"] || "~/.claude/rate-limit-history.jsonl")
+CACHE      = File.expand_path(ENV["USAGE_CACHE"] || "~/.claude/usage-cache.json")
+CACHE_GLOB = CACHE.sub(/\.json\z/, "-*.json")  # per-session snapshots the status line writes
+HISTORY    = File.expand_path(ENV["USAGE_HISTORY"] || "~/.claude/rate-limit-history.jsonl")
 
 # Tunable thresholds (percent used).
 SESSION_FULL = (ENV["USAGE_SESSION_FULL"] || "92").to_f   # 5h window effectively spent
@@ -46,52 +47,82 @@ def fmt_dur(secs)
   "#{m}m"
 end
 
-def num(hash, key)
-  v = hash.is_a?(Hash) ? hash[key] : nil
-  v.is_a?(Numeric) ? v : nil
+# Every session's snapshot (usage-cache-<session_id>.json). Falls back to the legacy
+# single file if no per-session files exist yet (right after an upgrade). Garbled
+# files are skipped, not fatal. => [files_that_existed, Array<Hash>] -- the file list
+# lets the caller tell "nothing has rendered" (no files) apart from "all snapshots are
+# corrupt" (files present, none parsed), which warrant different advice.
+def load_snapshots
+  files = Dir.glob(CACHE_GLOB)
+  files = [CACHE] if files.empty? && File.exist?(CACHE)
+  snaps = files.filter_map do |f|
+    d = begin JSON.parse(File.read(f)) rescue nil end
+    d if d.is_a?(Hash) && d["rate_limits"].is_a?(Hash)
+  end
+  [files, snaps]
 end
 
-unless File.exist?(CACHE)
-  warn <<~MSG
-    No usage cache at #{CACHE}.
+# Reconcile one ACCOUNT-GLOBAL window (five_hour / seven_day) across snapshots that
+# are each frozen at a different session's last API turn. Both windows are global, so
+# the disagreement between sessions is pure staleness. Two rules recover the truth:
+#   1. Only trust a snapshot whose reset is still AHEAD (and plausibly so, <= max_ahead).
+#      This drops an idle session's already-EXPIRED 5h window -- the "resets: now" bug.
+#   2. Among snapshots on the current window (the latest reset), take the MAX used%:
+#      usage is monotonic within a window, so the highest reading is the freshest.
+# No live snapshot -> [nil, nil]; the caller reports the window as unknown, never a
+# stale/expired one. Needs no notion of "which session am I", so it behaves the same
+# invoked inside a session or from a bare shell / background job.
+def reconcile_window(snaps, key, now, max_ahead)
+  live = snaps.filter_map do |d|
+    w = d["rate_limits"][key]
+    next unless w.is_a?(Hash) && w["used_percentage"].is_a?(Numeric)
+    r = w["resets_at"]
+    next unless r.is_a?(Numeric) && r > now && r <= now + max_ahead
+    { used: w["used_percentage"], reset: r }
+  end
+  return [nil, nil] if live.empty?
 
-    The status line writes it on every render, so this is empty only if the
-    status line hasn't drawn yet this session (e.g. a pure background job with no
-    TUI attached). Open/refresh an interactive Claude Code window on this machine
-    to populate it, then re-run. Don't guess the numbers.
-  MSG
+  reset = live.map { |e| e[:reset] }.max        # latest reset = the current window
+  best  = live.select { |e| e[:reset] == reset }.max_by { |e| e[:used] }
+  [best[:used], best[:reset]]
+end
+
+now          = Time.now
+files, snaps = load_snapshots
+if snaps.empty?
+  warn(files.empty? ? <<~ABSENT : <<~CORRUPT)
+    No usage snapshots matching #{CACHE_GLOB}.
+
+    The status line writes one per session on every render, so this is empty only if
+    no interactive Claude Code window has drawn on this machine recently (e.g. a pure
+    background job with no TUI attached). Open/refresh an interactive window to
+    populate it, then re-run. Don't guess the numbers.
+  ABSENT
+    Usage snapshots exist (#{files.size}) but none is readable -- corrupt or
+    partially written. Treat budget as unknown; don't guess. A fresh status-line
+    render will rewrite them; re-run once an interactive window has redrawn.
+  CORRUPT
   exit 2
 end
 
-data = begin
-  JSON.parse(File.read(CACHE))
-rescue StandardError => e
-  warn "Usage cache is unreadable (#{e.class}: #{e.message}). Treat budget as unknown; don't guess."
-  exit 2
-end
-
-now        = Time.now
-captured   = data["captured_at"].is_a?(Numeric) ? data["captured_at"] : nil
+# Freshness = the most recent render across ALL live sessions. captured_at is render
+# time, not data age (an idle session re-renders a frozen payload), so this detects
+# "nothing is rendering at all" -- the real staleness signal -- rather than per-value age.
+captured   = snaps.filter_map { |d| d["captured_at"] if d["captured_at"].is_a?(Numeric) }.max
 age        = captured ? (now.to_i - captured) : nil
-rl         = data["rate_limits"].is_a?(Hash) ? data["rate_limits"] : {}
-session    = rl["five_hour"]
-weekly     = rl["seven_day"]
 
-ses_used   = num(session, "used_percentage")
-ses_reset  = num(session, "resets_at")
-wk_used    = num(weekly, "used_percentage")
-wk_reset   = num(weekly, "resets_at")
+# reconcile_window already restricts to a plausible, still-ahead reset, so no separate
+# resets_at plausibility guard is needed -- an implausible/expired reset simply never wins.
+ses_used, ses_reset = reconcile_window(snaps, "five_hour", now.to_i, 6 * 3_600)
+wk_used,  wk_reset  = reconcile_window(snaps, "seven_day", now.to_i, WEEK + 86_400)
 
-# Plausibility-guard the reset timestamps (as the hook does): a bad resets_at -- e.g.
-# a millisecond epoch from a writer change -- would collapse the day/allowance math
-# into a confident-but-wrong PACE DOWN / BURN DOWN. Nil out an implausible one so
-# every reset-derived branch degrades to pace-agnostic (KEEP GOING) rather than misfiring.
-wk_reset   = nil unless wk_reset && wk_reset.between?(now.to_i - 86_400, now.to_i + WEEK + 86_400)
-ses_reset  = nil unless ses_reset && ses_reset.between?(now.to_i - 86_400, now.to_i + 6 * 3_600)
-
-# Read the burn history once and share it: weekly uses the whole-run slope, the 5h
-# session uses a short-horizon least-squares fit over the same samples.
+# Read the burn history once (raw; may be nil if unreadable), then reconcile it into
+# ONE account-global series PER window -- the log interleaves every session's samples,
+# so each field is collapsed to its current-window running max independently. weekly
+# uses the whole-run slope; the 5h session a short-horizon least-squares fit.
 history    = Burn.read(HISTORY, now.to_i)
+wk_hist    = Burn.envelope(history, "wk", "wk_reset")
+ses_hist   = Burn.envelope(history, "ses", "ses_reset")
 ses_soon   = false  # projected 5h cap is imminent (fast burst), even if not yet >= SESSION_FULL
 
 lines = []
@@ -115,7 +146,7 @@ if ses_used
   # Short-horizon burn on the 5h window: honest over minutes (no idle gaps in an
   # active burst), and hitting the cap is a real, imminent throttle -- so this rate
   # earns its keep where the weekly 24/7 projection doesn't.
-  sp = Burn.project_recent(history, now.to_i, field: "ses")
+  sp = Burn.project_recent(ses_hist, now.to_i, field: "ses")
   if sp
     cap_in = sp[:hours_to_cap] * 3600
     rate   = sp[:rate_per_h] >= 60 ? format("%.1f%%/min", sp[:rate_per_h] / 60.0) : format("%.1f%%/h", sp[:rate_per_h])
@@ -127,7 +158,11 @@ if ses_used
     end
   end
 else
-  lines << "SESSION  (no five_hour data in payload)"
+  # Snapshots exist but none is on a live 5h window: every session's 5h reading has
+  # already expired (all idle past their last window). 5h is account-global, so this
+  # is genuinely unknown until a session hits the API in the current window -- not a
+  # missing field. Reported honestly rather than echoing a stale/expired window.
+  lines << "SESSION  (no live 5h window across sessions -- all snapshots predate the last reset)"
 end
 
 # Past the cumulative day-N/7 share (front-loaded) AND not near reset -- the honest
@@ -166,13 +201,12 @@ if wk_used
     # it just shrinks tomorrow's share -- it self-corrects, it doesn't lock you out.
     lines << format("         pace guide: ~%d%%/day spends the rest evenly to reset (not a hard cap)", today_cap.round)
 
-    # Measured burn from the recorded history (reset-robust): if the current run's
-    # rate would reach 100% before the window resets, that's the real throttle
-    # warning -- the weekly ceiling nobody advertises, arriving early. `entries` is
-    # nil only when a non-empty history won't parse (drift/corruption) -- surface
-    # that rather than let a dead projection read as "all clear".
-    entries = history
-    proj    = Burn.project(entries)
+    # Measured burn from the reconciled weekly envelope (reset-robust): if the current
+    # run's rate would reach 100% before the window resets, that's the real throttle
+    # warning -- the weekly ceiling nobody advertises, arriving early. `history` is nil
+    # only when a non-empty log won't parse (drift/corruption) -- surface that rather
+    # than let a dead projection read as "all clear".
+    proj    = Burn.project(wk_hist)
     if proj
       secs_to_cap   = proj[:hours_to_cap] * 3600
       time_to_reset = wk_reset - now.to_i
@@ -184,12 +218,12 @@ if wk_used
         tail = burn_warn ? "~#{fmt_dur(idle)} idle before reset -- ease off IF you'll sustain this unattended" : "just shy of reset -> burn it down freely"
         lines << format("         burn: ~%.1f%%/h; IF sustained 24/7, cap in ~%s -- %s (idle/sleep stretches this out)", proj[:burn_per_h], fmt_dur(secs_to_cap), tail)
       end
-    elsif entries.nil?
+    elsif history.nil?
       lines << "         burn: history unreadable -- projection unavailable (not a clear signal)"
     end
   end
 else
-  lines << "WEEKLY   (no seven_day data in payload)"
+  lines << "WEEKLY   (no live 7d window across sessions -- snapshots missing or stale)"
 end
 
 lines << ""

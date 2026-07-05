@@ -56,6 +56,37 @@ module Burn
     nil  # a bad line is dropped, not fatal; read() flags an all-bad file as nil
   end
 
+  # Collapse the raw multi-session log into ONE account-global monotonic series for a
+  # single field over its CURRENT window. The status line records every concurrent
+  # session's samples into one file, each frozen at a different staleness, so a naive
+  # read interleaves them (wk 42, 35, 42, 32...) and current_run/trailing_run see
+  # phantom resets at every downward step. Both windows are account-global and
+  # monotonic within a window, so the truth is the running MAX over the current window
+  # (the latest reset_field value); samples from older windows are prior weeks/sessions
+  # and are dropped. => chronological Array<{t, field[, reset_field]}> (possibly empty),
+  # or nil when entries is nil -- an unreadable history must stay distinguishable from
+  # an empty one, not be masked as "no burn".
+  def envelope(entries, field, reset_field)
+    return nil if entries.nil?
+
+    # reset_field must be Numeric to be ordered: parse() only validates t and the
+    # field itself, so a schema-drifted line can carry a non-numeric reset. Ordering
+    # a String against an Integer would raise -- fatal here, since the caller invokes
+    # envelope outside any rescue. Non-numeric resets are simply excluded (the loop's
+    # `== latest` then drops them too), preserving the nil==nil legacy-fallback path.
+    latest  = entries.filter_map { |e| e[reset_field] if e[field].is_a?(Numeric) && e[reset_field].is_a?(Numeric) }.max
+    running = nil
+    entries.filter_map do |e|
+      next unless e[field].is_a?(Numeric)
+      next unless e[reset_field] == latest  # current window only (nil == nil when no reset recorded)
+
+      running = running ? [running, e[field]].max : e[field]
+      row = { "t" => e["t"], field => running }
+      row[reset_field] = latest if latest
+      row
+    end
+  end
+
   # The longest trailing run since the most recent reset boundary. A reset is a
   # BIG drop (> DROP_RESET) or a change of reset window -- small -1 dips are
   # rounding noise and stay inside the run (netted out by first->last), so a blip

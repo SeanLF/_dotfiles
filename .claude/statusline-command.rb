@@ -48,10 +48,22 @@ CACHE_WARN = (ENV["USAGE_CACHE_WARN_SECS"] || "900").to_i   # show the segment o
 CACHE_CRIT = (ENV["USAGE_CACHE_CRIT_SECS"] || "180").to_i   # bold red (not yellow) under this
 LOG     = File.expand_path(ENV["STATUSLINE_LOG"] || "~/.claude/statusline.log")
 # The live rate-limit payload only ever reaches this status line process; nothing
-# else on the machine can see it on demand. So we mirror it to a cache file every
-# render -- the `checking-usage` skill reads this to answer "how much budget is
-# left?" mid-session. captured_at lets the reader reject stale data.
-CACHE   = File.expand_path(ENV["USAGE_CACHE"] || "~/.claude/usage-cache.json")
+# else on the machine can see it on demand. So we mirror it every render -- the
+# `checking-usage` skill reads this to answer "how much budget is left?" mid-session.
+# captured_at lets the reader reject stale data.
+#
+# CRITICAL: rate_limits is ACCOUNT-GLOBAL (both five_hour and seven_day), but each
+# session's payload is a SNAPSHOT FROZEN at that session's last API turn -- and the
+# status line re-renders every refreshInterval even while idle, re-stamping that
+# stale snapshot with a fresh captured_at. With N concurrent sessions, a single
+# shared cache file is last-writer-wins across N different staleness levels: the
+# reader can get an idle session's already-expired 5h window ("resets: now") or an
+# under-counted weekly. So each session writes its OWN file (CACHE_GLOB) and the
+# reader reconciles them (current window + max used%) to reconstruct account truth.
+# CACHE (the un-suffixed path) is kept only as a legacy fallback for the reader.
+CACHE      = File.expand_path(ENV["USAGE_CACHE"] || "~/.claude/usage-cache.json")
+CACHE_GLOB = CACHE.sub(/\.json\z/, "-*.json")  # per-session snapshots: usage-cache-<session_id>.json
+CACHE_KEEP = (ENV["USAGE_CACHE_KEEP_SECS"] || "3600").to_i  # prune a session's snapshot this long after its last render
 # Append-only log of weekly/session % over time, one JSON line per CHANGE. The
 # cache is a single latest-snapshot; this is the series the checking-usage reader
 # turns into a burn rate ("weekly hits the cap in ~Xh"). Deduped so the constant
@@ -203,60 +215,108 @@ end
 # last-known-good global budget with a blank and stamp it fresh, silently blinding
 # the reader. Skipping preserves the prior cache. Fail-quiet: a write error must
 # never disturb the bar.
+#
+# Writes THIS session's own file (usage-cache-<session_id>.json) so concurrent
+# sessions never clobber each other; the reader reconciles across them. Falls back
+# to the shared path only when session_id is absent (shouldn't happen). Also prunes
+# snapshots left by sessions that have stopped rendering, so the glob stays bounded
+# to live sessions and a dead session's stale window can't linger in reconciliation.
 def cache_usage(data, now)
   return unless data.is_a?(Hash) && data["rate_limits"].is_a?(Hash) && !data["rate_limits"].empty?
 
-  tmp = "#{CACHE}.#{Process.pid}.tmp"
+  sid  = data["session_id"]
+  sid  = sid.gsub(/[^\w.-]/, "") if sid.is_a?(String)  # keep it a safe single filename component
+  path = sid && !sid.empty? ? CACHE.sub(/\.json\z/, "-#{sid}.json") : CACHE
+  tmp  = "#{path}.#{Process.pid}.tmp"
   File.write(tmp, JSON.generate(data.merge("captured_at" => now)))
-  File.rename(tmp, CACHE)  # atomic swap so a concurrent reader never sees a half-written file
+  File.rename(tmp, path)  # atomic swap so a concurrent reader never sees a half-written file
+  prune_caches(now)
 rescue StandardError => e
   log("warn", "usage cache write failed: #{e.class}: #{e.message}")
 end
 
-# Last recorded history entry, read from the file's tail so this stays O(1) as the
-# log grows (never slurp the whole file on the hot render path). nil if none/garbled.
-def last_history_entry
+# Delete per-session snapshots older than CACHE_KEEP (by mtime -- refreshed on every
+# render, so age tracks "time since this session last drew"). Best-effort: a prune
+# failure (races with another session's write, perms) is ignored, never disturbs the
+# bar. A file deleted out from under a concurrent reader just drops one snapshot.
+def prune_caches(now)
+  # Also sweep leftover *.tmp from a crash between write and rename; the mtime gate
+  # keeps a concurrent session's in-flight tmp (freshly written) safe.
+  (Dir.glob(CACHE_GLOB) + Dir.glob("#{CACHE_GLOB}.*.tmp")).each do |f|
+    File.delete(f) if now - File.mtime(f).to_i > CACHE_KEEP
+  rescue StandardError
+    nil
+  end
+rescue StandardError
+  nil
+end
+
+# This session's last recorded sample (or the global last line when session is nil),
+# found by scanning the file's tail so this stays cheap as the log grows -- never
+# slurp the whole file on the hot render path. With ~10 concurrent sessions
+# interleaving one shared log, 16KB reaches back well past this session's most recent
+# line (it recurs every ~10 lines), so per-session dedup stays reliable. nil if none
+# found/garbled -> caller appends a fresh sample.
+def last_sample_for(session)
   return nil unless File.exist?(HISTORY)
 
   tail = File.open(HISTORY, "rb") do |f|
-    f.seek([f.size - 512, 0].max)
+    f.seek([f.size - 16_384, 0].max)
     f.read
   end
-  line = tail.to_s.lines.map(&:strip).reject(&:empty?).last
-  line && JSON.parse(line)
+  tail.to_s.lines.reverse_each do |l|
+    obj = begin JSON.parse(l) rescue next end
+    next unless obj.is_a?(Hash)
+    return obj if session.nil? || obj["session"] == session
+  end
+  nil
 rescue StandardError
   nil  # a bad tail just means "no usable last entry" -> we'll append a fresh one
 end
 
-# Append one weekly/session sample, but only when weekly % or its window changed
-# since the last sample (renders are constant; we want a point per real move).
-# Append-only single-line writes are atomic across the concurrent windows that all
-# render this bar, so no locking. rate_limits is account-global, so every window
-# records the same series -- dedup makes the duplicates harmless.
+# Append one weekly/session sample, but only when THIS session's reading actually
+# moved (weekly %, its window, or the 5h %) since this session's last sample --
+# renders are constant; we want a point per real move. Append-only single-line writes
+# are atomic across the concurrent sessions that all record into this one log, so no
+# locking. Every session records the (account-global) series tagged by `session`; the
+# burn reader reconciles them into one envelope, so overlapping series are harmless.
+#
+# Dedup is PER-SESSION: a shared "last line" check would be defeated by other
+# sessions' interleaved writes (each session's value differs, so every render looked
+# like a change) and spam a line per render. We also key on `ses` so a 5h-only move
+# still lands a sample -- otherwise the session burn series would be starved.
 #
 # We also stamp tier + the rendering session's cumulative cost so a reader can turn
 # weekly-% into a tier-relative dollar figure. Caveats: `tier` is a manual constant;
 # `cost` is that ONE session's running total_cost_usd (tagged by `session`), NOT the
-# weekly cross-session total -- ccusage stays authoritative for spend. And because
-# dedup keys on wk only across all concurrent sessions, the first to reach a given
-# wk% wins that sample, so any one session's cost slice is sparse.
+# weekly cross-session total -- ccusage stays authoritative for spend.
 def record_history(rl, data, now)
   sd = rl["seven_day"]
   return unless sd.is_a?(Hash) && sd["used_percentage"].is_a?(Numeric)
 
-  entry = { "t" => now, "wk" => sd["used_percentage"], "wk_reset" => sd["resets_at"] }
+  session = data["session_id"] if data.is_a?(Hash) && data["session_id"].is_a?(String)
+  entry = { "t" => now, "wk" => sd["used_percentage"] }
+  entry["wk_reset"] = sd["resets_at"] if sd["resets_at"].is_a?(Numeric)  # numeric-only: the burn reader orders it
   fh = rl["five_hour"]
-  entry["ses"] = fh["used_percentage"] if fh.is_a?(Hash) && fh["used_percentage"].is_a?(Numeric)
+  if fh.is_a?(Hash)
+    entry["ses"] = fh["used_percentage"] if fh["used_percentage"].is_a?(Numeric)
+    # ses_reset lets the burn reader drop samples from an EXPIRED 5h window (5h is
+    # account-global but each session's snapshot can be from a past window), so the
+    # session slope is fit only over the current window.
+    entry["ses_reset"] = fh["resets_at"] if fh["resets_at"].is_a?(Numeric)
+  end
 
   entry["tier"] = TIER
   if data.is_a?(Hash)
     cost = data["cost"]
     entry["cost"] = cost["total_cost_usd"] if cost.is_a?(Hash) && cost["total_cost_usd"].is_a?(Numeric)
-    entry["session"] = data["session_id"] if data["session_id"].is_a?(String)
+    entry["session"] = session if session
   end
 
-  last = last_history_entry
-  return if last && last["wk"] == entry["wk"] && last["wk_reset"] == entry["wk_reset"]
+  last = last_sample_for(session)
+  if last && last["wk"] == entry["wk"] && last["wk_reset"] == entry["wk_reset"] && last["ses"] == entry["ses"]
+    return
+  end
 
   File.open(HISTORY, "a") { |f| f.write("#{JSON.generate(entry)}\n") }
 rescue StandardError => e
