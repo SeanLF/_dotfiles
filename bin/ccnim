@@ -24,7 +24,7 @@ olla_config="$HOME/.config/olla/config.yaml"
 op_ref="op://Private/r4dc7zukl4tr2yhye3vlonrh4i/credential"
 
 restart=false
-model="z-ai/glm-5.1"
+model="z-ai/glm-5.2"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -m | --model)
@@ -33,7 +33,7 @@ while [[ $# -gt 0 ]]; do
         exit 1
       }
       case "$2" in
-        glm) model="z-ai/glm-5.1" ;;
+        glm) model="z-ai/glm-5.2" ;;
         nemotron) model="nvidia/nemotron-3-ultra-550b-a55b" ;;
         *) model="$2" ;;
       esac
