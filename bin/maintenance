@@ -141,9 +141,13 @@ step_xcodes() {
       info "on latest beta: $latest_beta"
     elif $CHECK_ONLY; then
       info "newer beta available — would install: $latest_beta"
-    else
+    elif [[ -t 0 ]]; then
       info "upgrading to latest beta: $latest_beta"
       try xcodes install --latest-prerelease
+    else
+      # xcodes needs interactive Apple ID 2FA; a headless run can't answer it,
+      # so report instead of failing on every unattended sweep.
+      info "newer beta available (run maintenance interactively — needs Apple ID 2FA): $latest_beta"
     fi
   fi
 
@@ -202,7 +206,9 @@ step_claude_plugins() {
     warn "claude plugin list failed"
     return
   fi
-  ids=$(jq -r '.[] | select(.enabled) | (.id | split("@")[0])' <<<"$raw" 2>/dev/null) || {
+  # Use the full "name@marketplace" id — `claude plugin update` resolves that,
+  # not the bare name.
+  ids=$(jq -r '.[] | select(.enabled) | .id' <<<"$raw" 2>/dev/null) || {
     warn "could not parse plugin list (format change?)"
     return
   }
