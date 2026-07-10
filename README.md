@@ -5,7 +5,7 @@ Personal macOS dev environment config. **macOS only** — uses Homebrew, `launch
 The two pieces worth pointing at:
 
 - **`setup.sh` with drift detection.** Idempotent, modular, dry-runnable. Detects when a file is wrong (missing symlink, wrong target, out-of-date plist, missing Brewfile package, prunable mise tool) and reports before fixing. Any file it's about to clobber gets moved to `~/.dotfiles-backup/<timestamp>/` first, so nothing is ever destroyed. Run `./setup.sh --dry-run` to audit a machine without touching it.
-- **`bin/maint` with Claude Haiku summaries.** Runs the full upgrade sweep (brew, mas, Claude Code, mise, uv, tldr, Brewfile re-dump, macOS updates) and pipes the output through Haiku for a human-readable summary of what actually changed. `bin/maint --check` previews without upgrading.
+- **`bin/maint` with a local model summary.** Snapshots resolved tool versions (for rollback), then runs the full upgrade sweep (brew, mas, Xcode via xcodes, Claude Code + plugins/skills, mise, uv, tldr, Brewfile re-dump, macOS updates) and pipes the output through a local model for a human-readable summary of what actually changed. `bin/maint --check` previews without upgrading.
 
 A few Homebrew entries (`bash`, `curl`, `less`, `perl`, `vim`) exist specifically to shadow the ancient versions Apple ships with macOS — they're not redundant with system tools, they replace them.
 

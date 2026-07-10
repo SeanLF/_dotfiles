@@ -51,6 +51,35 @@ warn() {
 # Individual step failures shouldn't abort the whole maintenance run.
 try() { "$@" || warn "$* failed"; }
 
+# Snapshot resolved tool versions BEFORE any upgrade, so a bad `mise upgrade`
+# (or uv/rustup bump) is recoverable — those managers are version-addressable
+# (`mise install ruby@<old>`). Brew has no clean downgrade, so its list is
+# reference-only. Config rollback is already covered by git (Brewfile, mise config).
+step_snapshot() {
+  step "Version snapshot"
+  if $CHECK_ONLY; then
+    info "(skipped in --check mode — nothing to protect)"
+    return
+  fi
+  local out
+  out="$HOME/.dotfiles-backup/versions/$(date +%Y%m%d-%H%M%S)"
+  mkdir -p "$out" || {
+    warn "could not create snapshot dir $out"
+    return
+  }
+  mise ls >"$out/mise.txt" 2>/dev/null || true
+  command -v uv &>/dev/null && uv tool list >"$out/uv-tools.txt" 2>/dev/null || true
+  command -v rustup &>/dev/null && rustup toolchain list >"$out/rustup.txt" 2>/dev/null || true
+  brew list --versions >"$out/brew.txt" 2>/dev/null || true
+  # mise is the primary version-addressable manager (the main rollback target),
+  # so an empty manifest means the rollback point is unusable — say so loudly.
+  if [[ -s "$out/mise.txt" ]]; then
+    ok "snapshot -> $out"
+  else
+    warn "snapshot: mise.txt is empty — rollback point may be unusable ($out)"
+  fi
+}
+
 step_homebrew() {
   step "Homebrew"
   try brew update
@@ -77,6 +106,52 @@ step_appstore() {
   fi
 }
 
+# Xcode (managed by xcodes). Betas churn fast, so if you already run a beta we
+# auto-upgrade it to the latest prerelease. Stable is report-only — you keep a
+# stable Xcode alongside the beta and install new stables deliberately.
+# `xcodes list` prints ascending and marks installed versions "(Installed)", so
+# the last "Beta" line is the newest prerelease and tells us if we're already on
+# it (cheap guard against a needless multi-GB re-download).
+step_xcodes() {
+  step "Xcode (xcodes)"
+  command -v xcodes &>/dev/null || {
+    info "xcodes not installed, skipping"
+    return
+  }
+  # `xcodes update` refreshes the cached list but prints all ~285 versions;
+  # silence it since we re-read what we need from `xcodes list` below.
+  xcodes update >/dev/null 2>&1 || warn "xcodes update failed"
+
+  # Anchor on lines starting with a version number to skip blank lines and the
+  # "Showing Xcodes for this Mac..." footer that `xcodes list` prints. Read once.
+  local list latest_beta latest_stable
+  list=$(xcodes list 2>/dev/null)
+  latest_beta=$(echo "$list" | grep -iE "^[0-9].*beta" | tail -1)
+  latest_stable=$(echo "$list" | grep -E "^[0-9]" | grep -viE "beta|release candidate" | tail -1)
+
+  # Auto-upgrade the beta only if one is installed and it isn't already newest.
+  # Multi-GB download; may prompt for your Apple ID if xcodes has no cached
+  # session. --latest-prerelease self-updates the list before installing. Guard
+  # the empty-parse case so a format drift can't blank the "already newest"
+  # check and trigger a needless re-download.
+  if [[ -z "$latest_beta" ]]; then
+    warn "xcodes: could not parse a beta from 'xcodes list' (format change?)"
+  elif xcodes installed 2>/dev/null | grep -qi "beta"; then
+    if echo "$latest_beta" | grep -qi "installed"; then
+      info "on latest beta: $latest_beta"
+    elif $CHECK_ONLY; then
+      info "newer beta available — would install: $latest_beta"
+    else
+      info "upgrading to latest beta: $latest_beta"
+      try xcodes install --latest-prerelease
+    fi
+  fi
+
+  if [[ -n "$latest_stable" ]]; then
+    info "latest stable available (install manually): $latest_stable"
+  fi
+}
+
 # Workaround: `claude update` downloads the full binary (~200MB) even when
 # already up-to-date. Compare versions first to skip the download.
 # Claude Code also auto-upgrades while running; this just prefetches before
@@ -98,6 +173,46 @@ step_claude_code() {
     info "Claude Code $local_ver -> $remote_ver"
     $CHECK_ONLY || try claude update
   fi
+}
+
+# Claude plugins/skills self-update, but refreshing here stages the latest
+# versions before the next session so you don't run the reload slash command
+# mid-session. Refresh all marketplace sources, then update each enabled plugin
+# (there is no `update --all`; "restart required to apply").
+step_claude_plugins() {
+  step "Claude plugins/skills"
+  command -v claude &>/dev/null || {
+    info "claude not found, skipping"
+    return
+  }
+  try claude plugin marketplace update
+  if $CHECK_ONLY; then
+    info "(check mode: marketplace refreshed; plugin updates skipped)"
+    return
+  fi
+  command -v jq &>/dev/null || {
+    warn "jq not found — skipping per-plugin updates"
+    return
+  }
+  # Distinguish "list failed / schema drifted" from "genuinely zero enabled
+  # plugins" — otherwise a broken CLI silently reads as nothing-to-do and
+  # plugins go stale unnoticed.
+  local raw ids id
+  if ! raw=$(claude plugin list --json 2>/dev/null); then
+    warn "claude plugin list failed"
+    return
+  fi
+  ids=$(jq -r '.[] | select(.enabled) | (.id | split("@")[0])' <<<"$raw" 2>/dev/null) || {
+    warn "could not parse plugin list (format change?)"
+    return
+  }
+  if [[ -z "$ids" ]]; then
+    info "no enabled plugins to update"
+    return
+  fi
+  while IFS= read -r id; do
+    [[ -n "$id" ]] && try claude plugin update "$id"
+  done <<<"$ids"
 }
 
 # agy self-updates in the background on every invocation (per upstream install
@@ -229,9 +344,12 @@ if ! online -q 5; then
   exit 1
 fi
 
+step_snapshot
 step_homebrew
 step_appstore
+step_xcodes
 step_claude_code
+step_claude_plugins
 step_mise
 step_mise_drift
 step_gems
