@@ -22,7 +22,11 @@ backup() {
 }
 
 # Default module order — also what `all` runs. `macos` is opt-in only.
-DEFAULT_MODULES=(core brew symlinks tools ai_clis ssh dns)
+# `touchid` runs early (right after core) so every later sudo in the run —
+# notably the `dns` module's privileged writes — is a fingerprint tap, not a
+# password. The one exception is touchid's own write, which needs one password
+# sudo (you can't TouchID your way into enabling TouchID).
+DEFAULT_MODULES=(core touchid brew symlinks tools ai_clis ssh dns)
 
 # Silent success, loud failure
 info() { echo "$1"; }
@@ -277,6 +281,42 @@ setup_ssh() {
   fi
 }
 
+# Module: TouchID for sudo (native prompt via Apple's pam drop-in)
+# /etc/pam.d/sudo_local is Apple's supported include (Sonoma+), so unlike
+# editing /etc/pam.d/sudo directly it survives macOS updates. pam_tid.so ships
+# with macOS — no Homebrew dependency. Canonical content is tracked in
+# setup/sudo_local. The file is root-owned but world-readable and holds no
+# secrets, so we content-compare without sudo and only escalate to write.
+setup_touchid() {
+  local src="$DOTFILES_DIR/setup/sudo_local"
+  local dst="/etc/pam.d/sudo_local"
+
+  if [[ ! -f "$src" ]]; then
+    warn "TouchID pam source not found: $src — skipping"
+    return 0
+  fi
+
+  # pam_tid only engages if /etc/pam.d/sudo includes sudo_local (Apple's default
+  # on Sonoma+). On a customized or older sudo the drop-in is inert, so warn
+  # rather than claim a result we can't back up. BRE pattern: this module runs
+  # before brew installs ugrep, so grep here is system BSD grep on a fresh Mac.
+  if ! grep -q 'auth.*include.*sudo_local' /etc/pam.d/sudo; then
+    warn "/etc/pam.d/sudo does not include sudo_local — TouchID drop-in will be inert"
+  fi
+
+  if [[ -f "$dst" ]] && diff -q "$src" "$dst" &>/dev/null; then
+    info "TouchID sudo: configured"
+    return 0
+  fi
+
+  drift "TouchID sudo not enabled or drifted ($dst)"
+  $DRY_RUN && return 0
+  # install(1) writes atomically (temp + rename) and sets the mode in one call —
+  # safer than cp+chmod for an auth-critical file that must never be truncated.
+  sudo install -m 444 "$src" "$dst"
+  info "TouchID sudo: enabled"
+}
+
 # Module: macOS defaults
 setup_macos() {
   local macos_script="$DOTFILES_DIR/setup/macos_defaults.sh"
@@ -393,6 +433,7 @@ Flags:
 
 Modules:
   core      Install Xcode CLI tools and Homebrew
+  touchid   Enable TouchID for sudo (native prompt via pam_tid drop-in)
   brew      Install packages from Brewfile (with drift detection)
   tools     Install mise-managed runtimes/CLIs and uv-managed Python tools
   ai_clis   Install Claude Code and Antigravity CLI (direct installers)
@@ -432,6 +473,7 @@ main() {
   for module in "${modules[@]}"; do
     case "$module" in
       core) setup_core ;;
+      touchid) setup_touchid ;;
       brew) setup_brew ;;
       tools) setup_tools ;;
       ai_clis) setup_ai_clis ;;
