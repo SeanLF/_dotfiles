@@ -37,6 +37,7 @@ fi
 
 DOTFILES_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BREWFILE="$DOTFILES_DIR/Brewfile"
+RUBY_GEMS="$DOTFILES_DIR/ruby-global-gems"
 failures=()
 
 step() { echo -e "${bold}${blue}==> $1${reset}"; }
@@ -285,22 +286,45 @@ step_gems() {
     info "gem not found, skipping"
     return
   }
+
+  # Bare-metal tool gems that must live in the Ruby gemset (see ruby-global-gems).
+  # mise gives each Ruby its own gemset, so a new Ruby starts empty and these
+  # need (re)installing; project gems come from each repo's bundle, not here.
+  local wanted=() line
+  if [[ -f "$RUBY_GEMS" ]]; then
+    while IFS= read -r line; do
+      line="${line%%#*}"           # strip inline comments
+      line="${line//[[:space:]]/}" # drop all whitespace
+      [[ -n "$line" ]] && wanted+=("$line")
+    done <"$RUBY_GEMS"
+  fi
+
   if $CHECK_ONLY; then
+    if ((${#wanted[@]})); then
+      local installed missing=() g
+      installed="$(gem list --no-versions || true)"
+      for g in "${wanted[@]}"; do
+        grep -qxF "$g" <<<"$installed" || missing+=("$g")
+      done
+      ((${#missing[@]})) && info "would install (missing host gems): ${missing[*]}"
+    fi
     gem outdated || true
     return
   fi
 
-  local openssl_prefix=""
+  # `local -x` scopes the openssl export to the gem child processes and restores
+  # the prior env on return, so nothing leaks into later maintenance steps.
+  local openssl_prefix="" ssl_args=()
   if command -v brew &>/dev/null; then
     openssl_prefix="$(brew --prefix openssl@3 2>/dev/null || true)"
   fi
-
   if [[ -n "$openssl_prefix" ]]; then
-    PKG_CONFIG_PATH="$openssl_prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
-      try gem update -- --with-openssl-dir="$openssl_prefix"
-  else
-    try gem update
+    local -x PKG_CONFIG_PATH="$openssl_prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+    ssl_args=(-- --with-openssl-dir="$openssl_prefix")
   fi
+
+  ((${#wanted[@]})) && try gem install --no-document "${wanted[@]}" "${ssl_args[@]}"
+  try gem update "${ssl_args[@]}"
 }
 
 # rustup is bootstrapped manually (not via brew or mise). mise's `rust` plugin

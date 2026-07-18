@@ -1,0 +1,13 @@
+# Global Ruby gems — bare-metal, host-side tools only.
+#
+# These run OUTSIDE project bundles and OUTSIDE Docker, so they must live in the
+# Ruby gemset itself rather than any repo's Gemfile. Everything else a project
+# needs comes from its own `bundle install`, never this file.
+#
+# Why this file exists: mise gives each Ruby version its own gemset, so a fresh
+# Ruby (patch bump, new machine) starts empty. `bin/maintenance` reads this list
+# to (re)populate the host tools. One gem per line; blank lines and # ignored.
+
+dip       # docker dev-environment wrapper — drives containers from the host
+kamal     # deploy tool — orchestrates Docker on remote hosts
+ruby-lsp  # editor language server — runs on the host, outside the container
