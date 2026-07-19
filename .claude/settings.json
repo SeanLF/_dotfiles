@@ -1,9 +1,8 @@
 {
   "cleanupPeriodDays": 100000,
   "permissions": {
-    "defaultMode": "default"
+    "defaultMode": "auto"
   },
-  "model": "opus[1m]",
   "disableClaudeAiConnectors": true,
   "hooks": {
     "UserPromptSubmit": [
@@ -11,7 +10,51 @@
         "hooks": [
           {
             "type": "command",
-            "command": "ruby ~/.claude/hooks/usage-pace-warn.rb"
+            "command": "/opt/homebrew/bin/ccpool warn"
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/steer-agent.sh working"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "permission_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/steer-agent.sh approval"
+          }
+        ]
+      },
+      {
+        "matcher": "idle_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/steer-agent.sh idle"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/steer-agent.sh done"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/steer-agent.sh end"
           }
         ]
       }
@@ -30,7 +73,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "ruby ~/.claude/hooks/usage-pace-warn.rb"
+            "command": "/opt/homebrew/bin/ccpool warn"
           }
         ]
       }
@@ -60,7 +103,7 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "ruby ~/.claude/statusline-command.rb",
+    "command": "/opt/homebrew/bin/ccpool statusline",
     "refreshInterval": 10
   },
   "enabledPlugins": {
@@ -75,7 +118,8 @@
     "superpowers@claude-plugins-official": true,
     "feature-dev@claude-plugins-official": true,
     "claude-code-setup@claude-plugins-official": false,
-    "rust-analyzer-lsp@claude-plugins-official": true,
+    "rust-analyzer-lsp@claude-plugins-official": false,
+    "ruby-lsp@claude-plugins-official": false,
     "swift-lsp@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {},
