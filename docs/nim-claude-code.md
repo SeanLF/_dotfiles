@@ -293,8 +293,8 @@ Claude Code speaks the Anthropic Messages API; NIM's hosted gateway speaks
 OpenAI-compatible only. A translation proxy (Olla) is **required** — see
 [native endpoint](#the-native-anthropic-endpoint-self-hosted-only).
 
-**Olla ([thushan/olla](https://github.com/thushan/olla)) cannot fail over on a 429.**
-Confirmed from source:
+**Stock Olla ([thushan/olla](https://github.com/thushan/olla)) cannot fail over on a 429**
+— but we patched it so it can (PoC, see below). Confirmed from source, stock behaviour:
 
 - Retry/failover fires **only on connection-level errors** (refused/reset/timeout before a
   response). Any real HTTP response — including 429 — is treated as success and streamed
@@ -304,11 +304,37 @@ Confirmed from source:
 - No `Retry-After` handling on the proxy path, no 429 backoff.
 - **No idle auto-shutdown** — Olla runs until killed (relevant to the watchdog plan item;
   it must be built externally).
-- `model_aliases` _can_ map one alias to a list of models across endpoints and load-balance
-  them, but that failover still only triggers on connection errors — **a GLM 429 will not
-  push traffic to a fallback model.**
+- `model_aliases` _can_ map one alias to a list of models across endpoints, but the alias map
+  is `endpoint→single-model` (first-wins), and the retry loop iterates endpoints — so
+  same-endpoint next-model failover (the NIM case: one endpoint, all models) isn't
+  expressible without carrying the model chain separately.
 
-**Implication:** "on GLM 429, temporarily serve another model" must be built outside Olla.
+### PoC: 429 failover added to Olla (verified 2026-07-06)
+
+Upstream feature request filed: [thushan/olla#193](https://github.com/thushan/olla/issues/193)
+(references the 5xx sibling #144; grounds the config shape in nginx/Kong/LiteLLM/Envoy prior
+art; flags that the "same-endpoint next-model" failover axis is the deliberate departure).
+Patch at `docs/olla-429-failover.poc.patch` (5 files, +157/-21). Live working copy parked in
+the fork **`~/Developer/olla`** (SeanLF/olla), branch `feature/429-alias-model-failover`
+(pushed; builds + proxy tests pass), ready to open as a PR once the maintainer steers the
+design on #193. Adds an **inline
+model-failover loop** in the olla proxy path: on a 429, rewrite the request body's `model`
+to the next model in the alias's ordered chain and re-dispatch to the same endpoint; only
+the first non-429 (or final 429) is streamed to the client. The alias's ordered chain is
+carried via a new `ContextAliasModelChainKey`. **Verified end-to-end** against a mock
+backend (glm→429, kimi→200): a `claude-opus-4-8 → [glm, kimi]` request returned
+`model: moonshotai/kimi-k2.6` with log `429 failover from_model=z-ai/glm-5.2
+to_model=moonshotai/kimi-k2.6`. Olla's own proxy tests still pass; non-alias path unchanged.
+
+Gotcha found: re-dispatched requests must set `proxyReq.ContentLength` explicitly, else Go
+sends them chunked and length-strict backends see an empty body. PoC-grade — still needs:
+configurable `retry_on_status`, a per-model cooldown table (so you skip the 429'd model for
+N min rather than re-hitting it), and — for the general multi-endpoint case — changing the
+retry candidate unit from endpoint to (endpoint, model). And it's only the **reactive** half;
+the **proactive per-model pacer** (to avoid tripping the cap at all) is still separate.
+
+**Implication:** 429 failover in Olla is proven feasible (~2 focused features from a
+production version); "serve another model on GLM 429" no longer _requires_ leaving Olla.
 
 Options:
 

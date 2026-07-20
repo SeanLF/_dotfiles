@@ -1,0 +1,256 @@
+diff --git i/internal/adapter/proxy/core/model_rewrite.go w/internal/adapter/proxy/core/model_rewrite.go
+index 67547b2..72f3836 100644
+--- i/internal/adapter/proxy/core/model_rewrite.go
++++ w/internal/adapter/proxy/core/model_rewrite.go
+@@ -57,6 +57,22 @@ func RewriteModelForAlias(ctx context.Context, r *http.Request, endpoint *domain
+ 	r.ContentLength = int64(len(rewritten))
+ }
+ 
++// RewriteModelInBody splices an explicit model name into the top-level "model"
++// field of a JSON request body, reusing the same targeted byte-splice logic as
++// RewriteModelForAlias so the result is byte-identical to the input except for the
++// model name. Unlike RewriteModelForAlias it takes the model name directly (rather
++// than resolving it from the alias map in context), which is what the same-endpoint
++// failover loop needs to try successive models from an alias chain.
++//
++// Returns the body unchanged when it is not a JSON object with a top-level string
++// "model" field, or when model is empty.
++func RewriteModelInBody(body []byte, model string) []byte {
++	if model == "" {
++		return body
++	}
++	return rewriteModelField(body, model)
++}
++
+ // rewriteModelField performs a targeted replacement of the top-level "model" field's
+ // string value in a JSON body. Uses a JSON token scanner to find the precise byte
+ // offset of the top-level value, then splices in the replacement — preserving all
+diff --git i/internal/adapter/proxy/olla/service_retry.go w/internal/adapter/proxy/olla/service_retry.go
+index 2ac5098..0a10786 100644
+--- i/internal/adapter/proxy/olla/service_retry.go
++++ w/internal/adapter/proxy/olla/service_retry.go
+@@ -1,9 +1,11 @@
+ package olla
+ 
+ import (
++	"bytes"
+ 	"context"
+ 	"errors"
+ 	"fmt"
++	"io"
+ 	"net/http"
+ 	"time"
+ 
+@@ -100,33 +102,96 @@ func (s *Service) proxyToSingleEndpoint(ctx context.Context, w http.ResponseWrit
+ 		}
+ 	}
+ 
+-	proxyReq, err := s.prepareProxyRequest(ctx, r, targetURL, endpoint, stats)
+-	if err != nil {
+-		if cb != nil {
+-			cb.RecordFailure()
++	// Buffer the request body once so each failover attempt can re-send it. The body
++	// is a one-shot reader (already alias-rewritten above), so we snapshot the bytes
++	// and hand each attempt a fresh bytes.Reader over them.
++	var bodyBytes []byte
++	if r.Body != nil {
++		var readErr error
++		bodyBytes, readErr = io.ReadAll(r.Body)
++		r.Body.Close()
++		if readErr != nil {
++			if cb != nil {
++				cb.RecordFailure()
++			}
++			s.RecordFailure(ctx, endpoint, time.Since(stats.StartTime), readErr)
++			return fmt.Errorf("failed to buffer request body: %w", readErr)
+ 		}
+-		s.RecordFailure(ctx, endpoint, time.Since(stats.StartTime), err)
+-		return fmt.Errorf("failed to create proxy request: %w", err)
+ 	}
+ 
+-	rlog.Debug("making round-trip request", "target", targetURL.String())
+-	backendStart := time.Now()
+-	resp, err := transport.RoundTrip(proxyReq)
+-	stats.BackendResponseMs = time.Since(backendStart).Milliseconds()
++	// Determine the ordered same-endpoint failover chain. Without an alias chain in
++	// context this is a single entry, preserving today's exact behaviour.
++	attempts := failoverModels(ctx, endpoint)
+ 
+-	if err != nil {
+-		if cb != nil {
+-			cb.RecordFailure()
++	// Failover loop: try each model in the chain against the SAME endpoint. On a
++	// retryable status (e.g. 429) with a further model available, rewrite the body
++	// and re-dispatch — nothing is committed to the client until a final response is
++	// chosen, so streaming/SSE for the winning response is unaffected.
++	var resp *http.Response
++	for i, model := range attempts {
++		// Build a fresh body for this attempt with the model field rewritten to the
++		// attempt's actual model (no-op rewrite when model is empty).
++		attemptBody := core.RewriteModelInBody(bodyBytes, model)
++		r.Body = io.NopCloser(bytes.NewReader(attemptBody))
++		r.ContentLength = int64(len(attemptBody))
++
++		proxyReq, prepErr := s.prepareProxyRequest(ctx, r, targetURL, endpoint, stats)
++		if prepErr != nil {
++			if cb != nil {
++				cb.RecordFailure()
++			}
++			s.RecordFailure(ctx, endpoint, time.Since(stats.StartTime), prepErr)
++			return fmt.Errorf("failed to create proxy request: %w", prepErr)
+ 		}
+-		// Don't log as error if it's a connection failure - the retry handler will handle it
+-		if core.IsConnectionError(err) {
+-			rlog.Debug("round-trip connection failed", "error", err)
+-		} else {
+-			rlog.Error("round-trip failed", "error", err)
++
++		// The body is an io.NopCloser(*bytes.Reader), whose length net/http cannot
++		// auto-detect, so proxyReq.ContentLength defaults to 0 and the request would
++		// be sent chunked (no Content-Length header). Set it explicitly so backends
++		// that read Content-Length see the real body rather than an empty one.
++		proxyReq.ContentLength = int64(len(attemptBody))
++
++		rlog.Debug("making round-trip request", "target", targetURL.String())
++		backendStart := time.Now()
++		rtResp, rtErr := transport.RoundTrip(proxyReq)
++		stats.BackendResponseMs = time.Since(backendStart).Milliseconds()
++
++		if rtErr != nil {
++			if cb != nil {
++				cb.RecordFailure()
++			}
++			// Don't log as error if it's a connection failure - the retry handler will handle it
++			if core.IsConnectionError(rtErr) {
++				rlog.Debug("round-trip connection failed", "error", rtErr)
++			} else {
++				rlog.Error("round-trip failed", "error", rtErr)
++			}
++			s.RecordFailure(ctx, endpoint, time.Since(stats.StartTime), rtErr)
++			duration := time.Since(stats.StartTime)
++			return common.MakeUserFriendlyError(rtErr, duration, "backend", cfg.GetResponseTimeout())
+ 		}
+-		s.RecordFailure(ctx, endpoint, time.Since(stats.StartTime), err)
+-		duration := time.Since(stats.StartTime)
+-		return common.MakeUserFriendlyError(err, duration, "backend", cfg.GetResponseTimeout())
++
++		// If the backend returned a retryable status and the alias chain has a further
++		// model, fail over to it on this same endpoint. The 429 check happens BEFORE any
++		// header copy or WriteHeader, so the client sees nothing until the chain settles.
++		if retryOnStatus[rtResp.StatusCode] && i < len(attempts)-1 {
++			nextModel := attempts[i+1]
++			rlog.Info("429 failover",
++				"from_model", model,
++				"to_model", nextModel,
++				"endpoint", endpoint.Name,
++				"status", rtResp.StatusCode)
++			if ctxLogger != nil {
++				ctxLogger.Info("429 failover",
++					"from_model", model,
++					"to_model", nextModel,
++					"endpoint", endpoint.Name)
++			}
++			rtResp.Body.Close()
++			continue
++		}
++
++		resp = rtResp
++		break
+ 	}
+ 	defer resp.Body.Close()
+ 
+@@ -227,6 +292,38 @@ func (s *Service) proxyToSingleEndpoint(ctx context.Context, w http.ResponseWrit
+ 	return nil
+ }
+ 
++// retryOnStatus lists backend HTTP status codes that trigger same-endpoint,
++// next-model failover for alias-resolved requests.
++// TODO: make configurable via retry_on_status
++var retryOnStatus = map[int]bool{429: true}
++
++// failoverModels returns the ordered list of actual model names to try for this
++// endpoint, starting with the model currently selected for it. When the alias's
++// ordered chain is present in context, the returned slice is the suffix of that
++// chain beginning at the current model, so callers fail over to subsequent models
++// on the same endpoint. Returns a single-element slice (today's behaviour, with an
++// empty string meaning "don't rewrite") when no chain is configured.
++func failoverModels(ctx context.Context, endpoint *domain.Endpoint) []string {
++	aliasMap, _ := ctx.Value(constants.ContextModelAliasMapKey).(map[string]string)
++	current := aliasMap[endpoint.GetURLString()]
++
++	chain, _ := ctx.Value(constants.ContextAliasModelChainKey).([]string)
++	if len(chain) == 0 {
++		return []string{current}
++	}
++
++	// Start at the current model's position so we only fail over to models that
++	// come after it in the alias's ordered list.
++	start := 0
++	for i, m := range chain {
++		if m == current {
++			start = i
++			break
++		}
++	}
++	return chain[start:]
++}
++
+ // ProxyRequestWithRetry is an alias for ProxyRequestToEndpointsWithRetry
+ func (s *Service) ProxyRequestWithRetry(ctx context.Context, w http.ResponseWriter, r *http.Request, stats *ports.RequestStats, rlog logger.StyledLogger) error {
+ 	endpoints, err := s.DiscoveryService.GetHealthyEndpoints(ctx)
+diff --git i/internal/app/handlers/handler_proxy.go w/internal/app/handlers/handler_proxy.go
+index fe9ebc2..958fabc 100644
+--- i/internal/app/handlers/handler_proxy.go
++++ w/internal/app/handlers/handler_proxy.go
+@@ -600,6 +600,14 @@ func (a *Application) resolveAliasEndpoints(ctx context.Context, profile *domain
+ 	// store the rewrite map in the profile for use during request proxying
+ 	profile.SetInspectionMeta(constants.ContextModelAliasMapKey, endpointToModel)
+ 
++	// also store the alias's ordered actual-model list so the proxy can fail over to
++	// the next model on the same endpoint when a backend returns a retryable status
++	if a.aliasResolver != nil {
++		if chain := a.aliasResolver.GetActualModels(aliasName); len(chain) > 0 {
++			profile.SetInspectionMeta(constants.ContextAliasModelChainKey, chain)
++		}
++	}
++
+ 	// set routing decision so downstream headers/metrics stay consistent
+ 	profile.RoutingDecision = ports.NewRoutingDecision("alias", ports.RoutingActionRouted,
+ 		fmt.Sprintf("alias %q resolved to %d endpoint(s)", aliasName, len(aliasEndpoints)))
+diff --git i/internal/app/handlers/handler_translation.go w/internal/app/handlers/handler_translation.go
+index baba449..4b04a8f 100644
+--- i/internal/app/handlers/handler_translation.go
++++ w/internal/app/handlers/handler_translation.go
+@@ -495,6 +495,15 @@ func (a *Application) prepareProxyContext(ctx context.Context, r *http.Request,
+ 				r = r.WithContext(ctx)
+ 			}
+ 		}
++
++		// pass the alias's ordered actual-model list through context so the proxy can
++		// fail over to the next model on the same endpoint on a retryable status
++		if chainRaw, ok := pr.profile.InspectionMeta.Load(constants.ContextAliasModelChainKey); ok {
++			if chain, ok := chainRaw.([]string); ok {
++				ctx = context.WithValue(ctx, constants.ContextAliasModelChainKey, chain)
++				r = r.WithContext(ctx)
++			}
++		}
+ 	}
+ 
+ 	return ctx, r
+diff --git i/internal/core/constants/context.go w/internal/core/constants/context.go
+index f03472c..f6c0fec 100644
+--- i/internal/core/constants/context.go
++++ w/internal/core/constants/context.go
+@@ -27,6 +27,12 @@ const (
+ 	// request body to match what the selected backend expects
+ 	ContextModelAliasMapKey = "model_alias_map"
+ 
++	// ContextAliasModelChainKey stores the alias's ordered []string of actual model names.
++	// It enables same-endpoint next-model failover: when a backend returns a retryable
++	// status (e.g. 429), the proxy rewrites the request body to the next model in this
++	// chain and re-dispatches to the same endpoint instead of streaming the failure.
++	ContextAliasModelChainKey = "alias_model_chain"
++
+ 	// ContextInputTokensKey carries a prompt token estimate through the translation
+ 	// pipeline so the streaming translator can populate input_tokens in message_start
+ 	// before the upstream usage chunk arrives (which only comes at the end of the stream).
