@@ -8,6 +8,7 @@ setopt HIST_FIND_NO_DUPS
 setopt SHARE_HISTORY
 
 # Completions
+fpath=("/Users/sean/.local/share/zsh/site-functions" $fpath) # sentry-cli completion
 autoload -Uz compinit && compinit
 
 # Plugins (via Homebrew)
