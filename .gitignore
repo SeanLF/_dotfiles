@@ -1,4 +1,5 @@
 # Local files
+scratch/
 .zshrc.local
 .DS_Store
 .playwright-cli/
