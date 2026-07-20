@@ -18,7 +18,11 @@ lint:
     git ls-files -z -- {{shell_pathspec}}   | xargs -0 mise x -- shfmt -d -i 2 -ci
     mise x -- ruff check bin/nextdns-configure
     git ls-files -z -- '*.toml'             | xargs -0 mise x -- taplo fmt --check
-    git ls-files -z -- '*.md' '*.json' '*.yml' '*.yaml' | xargs -0 mise x -- prettier --check
+    # prettier 3.1.0+ hard-errors on explicitly-passed symlinks (glob-expanded ones it skips
+    # silently); drop symlinked tracked files so linked skills don't fail the check.
+    git ls-files -z -- '*.md' '*.json' '*.yml' '*.yaml' \
+      | while IFS= read -r -d '' f; do [ -L "$f" ] || printf '%s\0' "$f"; done \
+      | xargs -0 mise x -- prettier --check
 
 # Audit the machine for drift without making changes
 dry-run:
