@@ -1,4 +1,4 @@
-tap "teamookla/speedtest"
+tap "seanlf/tap", "https://github.com/SeanLF/homebrew-tap"
 # Static checker for GitHub Actions workflow files
 brew "actionlint"
 # Library for command-line editing
@@ -11,10 +11,14 @@ brew "btop"
 brew "cliclick"
 # Get a file from an HTTP, HTTPS or FTP server
 brew "curl"
+# Debugger for the Go programming language
+brew "delve"
 # File comparison utilities
 brew "diffutils"
 # Modern, maintained replacement for ls
 brew "eza"
+# Play, record, convert, and stream select audio and video codecs
+brew "ffmpeg"
 # Collection of GNU find, xargs, and locate
 brew "findutils"
 # Command-line fuzzy finder written in Go
@@ -27,6 +31,8 @@ brew "git"
 brew "gnu-sed"
 # GNU Privacy Guard (OpenPGP)
 brew "gnupg"
+# Deliver Go binaries as fast and easily as possible
+brew "goreleaser"
 # GNU grep, egrep and fgrep
 brew "grep"
 # HTTP load generator, ApacheBench (ab) replacement
@@ -51,6 +57,8 @@ brew "nbping"
 brew "nextdns"
 # OpenBSD freely-licensed SSH connectivity tools
 brew "openssh"
+# Swiss-army knife of markup format conversion
+brew "pandoc"
 # Highly capable, feature-rich programming language
 brew "perl"
 # PDF rendering library (based on the xpdf-3.0 code base)
@@ -59,6 +67,16 @@ brew "poppler"
 brew "rqbit"
 # Compressed read-only file system for Linux
 brew "squashfs"
+# CLI for generating a Software Bill of Materials from container images
+brew "syft"
+# Send macOS User Notifications from the command-line
+brew "terminal-notifier"
+# OCR (Optical Character Recognition) engine
+brew "tesseract"
+# Vulnerability scanner for container images, file systems, and Git repos
+brew "trivy"
+# Your CLI home video recorder
+brew "vhs"
 # Vi 'workalike' with many additional features
 brew "vim"
 # Generate your Xcode project from a spec file and your folder structure
@@ -73,6 +91,8 @@ brew "zsh-syntax-highlighting"
 cask "1password"
 # Command-line interface for 1Password
 cask "1password-cli"
+# Get the most out of a fixed Claude subscription pool
+cask "seanlf/tap/ccpool", trusted: true
 # OpenAI's official ChatGPT desktop app
 cask "chatgpt"
 # Anthropic's official Claude AI desktop app
@@ -101,8 +121,6 @@ cask "ollama-app"
 cask "orbstack"
 # VPN client focusing on security
 cask "protonvpn"
-# Control your tools with a few keystrokes
-cask "raycast"
 # Move and resize windows using keyboard shortcuts or snap areas
 cask "rectangle"
 # Instant messaging application focusing on security
@@ -116,8 +134,8 @@ cask "zed"
 mas "1Password for Safari", id: 1569813296
 mas "Consent-O-Matic", id: 1606897889
 mas "Flighty", id: 1358823008
-mas "Little Snitch Mini", id: 1629008763
 mas "TestFlight", id: 899247664
 mas "WhatsApp", id: 310633997
 mas "Xcode", id: 497799835
+cargo "cargo-cyclonedx"
 uv "osxphotos"
