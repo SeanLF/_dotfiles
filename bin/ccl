@@ -1,26 +1,148 @@
 #!/bin/bash
-# Claude Code on a local Ollama model (no rate limit, fully offline)
+# Claude Code on a local llama.cpp model (no rate limit, fully offline)
 #
-# Usage: ccl [-h] [model]
-#   -h, --help   Show this help message
-#   model        Ollama model to run (default: glm-4.7-flash)
+# Usage: ccl [-m MODEL] [-r] [-h] [claude args...]
+#   -m, --model     glm (default) | <user/repo[:quant]> | /path/to.gguf
+#   -r, --restart   Restart llama-server first (use after changing flags)
+#   -h, --help      Show this help message
 #
-# Runs Claude Code CLI against a local model via Ollama's native Anthropic
-# endpoint, no proxy needed. Use for offline/confidential or heavy parallel
-# work; `ccnim` is the free cloud (NIM) tier. Inspect the backend with
-# `mlxcheck` after the model loads (GGUF tags run on Metal, not MLX).
+# Runs Claude Code CLI against llama-server's native Anthropic endpoint
+# (/v1/messages), no proxy needed. llama-server serves one model and ignores
+# the requested model name, so subagents asking for claude-opus-4-8 land on the
+# loaded model without the alias table `ccnim` needs. HF repos are pulled on
+# first use and cached under ~/.cache/huggingface. For the free hosted tier use
+# `ccnim` (NIM via Olla).
 
 set -e
 
 show_help() {
-  sed -n '2,11s/^# \{0,1\}//p' "$0"
+  sed -n '2,15s/^# \{0,1\}//p' "$0"
   exit 0
 }
 
-case "${1:-}" in
-  -h | --help) show_help ;;
+url="http://127.0.0.1:40115"
+# Not /tmp/llama-server.log: Llama.app's `llama serve` already writes there,
+# and the startup-failure handler below tails this file.
+log=/tmp/ccl-llama-server.log
+# 128K, not the 64K inherited from OLLAMA_CONTEXT_LENGTH: GLM-4.7-Flash is MLA
+# (deepseek2 arch), so its KV cache is cheap. Measured on this M4 Pro, doubling
+# 64K -> 128K cost 3.4 GiB (23.6 -> 27.0 GiB RSS), against a ~37 GiB Metal
+# working-set ceiling. Lower it if a future model has a fatter KV cache.
+ctx="${LLAMA_CONTEXT_LENGTH:-131072}"
+
+restart=false
+model="glm"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -m | --model)
+      [[ -n "${2:-}" ]] || {
+        echo "ccl: -m requires a model (glm | <repo> | <path>)" >&2
+        exit 1
+      }
+      model="$2"
+      shift 2
+      ;;
+    -r | --restart)
+      restart=true
+      shift
+      ;;
+    -h | --help) show_help ;;
+    *) break ;;
+  esac
+done
+
+# Short names map to specific quants so `ccl` is reproducible; anything else is
+# passed through as either a local .gguf path or a Hugging Face repo id. $label
+# is what the server advertises and what Claude Code displays, so a bare path
+# does not end up as the model name in the UI.
+label="$model"
+# SC2088 is disabled for the "~/"* pattern below: bash tilde-expands an
+# UNQUOTED case pattern, so a bare ~/* would compile to $HOME/* (a redundant
+# subset of /*) and a literal tilde the calling shell did not expand would fall
+# through to the HF-repo arm. Not expanding in the pattern is the point; the
+# branch body does the expansion itself.
+# shellcheck disable=SC2088
+case "$model" in
+  glm) source="-hf unsloth/GLM-4.7-Flash-GGUF:UD-Q5_K_XL" ;;
+  /* | ./* | "~/"*)
+    path="${model/#\~/$HOME}"
+    [[ -f "$path" ]] || {
+      echo "ccl: no such model file: $path" >&2
+      exit 1
+    }
+    source="-m $path"
+    label="$(basename "$path" .gguf)"
+    ;;
+  */*) source="-hf $model" ;;
+  *)
+    echo "ccl: unknown model '$model' (use glm | <user/repo> | <path>)" >&2
+    exit 1
+    ;;
 esac
 
-model="${1:-glm-4.7-flash}"
-export OLLAMA_CONTEXT_LENGTH="${OLLAMA_CONTEXT_LENGTH:-65536}"
-exec ollama launch claude --model "$model"
+command -v llama-server >/dev/null || {
+  echo "ccl: 'llama-server' not found on PATH (brew install llama.cpp)" >&2
+  exit 1
+}
+
+server_up() { curl -sf -o /dev/null --max-time 2 "$url/health" 2>/dev/null; }
+
+# --alias makes /v1/models echo back the short name, which is the only way to
+# tell which model a running server holds without resolving HF repos to cache
+# paths ourselves. A mismatch means the user asked for a different model.
+loaded() { curl -sf --max-time 2 "$url/v1/models" 2>/dev/null | jq -r '.data[0].id // empty'; }
+
+if server_up && [[ "$(loaded)" != "$label" ]]; then
+  echo "ccl: model -> $label (restarting llama-server)" >&2
+  restart=true
+fi
+
+if $restart && server_up; then
+  pkill -f "llama-server .* --port 40115" 2>/dev/null || true
+  # Wait for the port to actually free; a bare sleep races a still-shutting-down
+  # server, which would pass server_up below and silently keep the old model.
+  n=0
+  while server_up && [[ $n -lt 20 ]]; do
+    sleep 0.5
+    n=$((n + 1))
+  done
+  if server_up; then
+    echo "ccl: warning: llama-server still on :40115; it may serve the old model" >&2
+  fi
+fi
+
+if ! server_up; then
+  # --jinja is the default in llama.cpp 10090; passing it explicitly pins that
+  # default so a future flip cannot silently swap GLM's own template ([gMASK]
+  # <sop>, tool-call framing) for a generic one.
+  # shellcheck disable=SC2086
+  nohup llama-server $source --alias "$label" -c "$ctx" \
+    --port 40115 --host 127.0.0.1 --jinja >"$log" 2>&1 &
+  server_pid=$!
+  disown
+  echo "ccl: starting llama-server ($label, ctx $ctx)" >&2
+  # First run of a new model downloads it, so allow a long startup. The PID
+  # check exits early on a real failure instead of waiting out the timeout.
+  n=0
+  until server_up; do
+    if ! kill -0 "$server_pid" 2>/dev/null; then
+      echo "ccl: llama-server exited during startup:" >&2
+      tail -n 15 "$log" >&2
+      exit 1
+    fi
+    if [[ $n -ge 1200 ]]; then
+      echo "ccl: llama-server not healthy after 10m (see $log)" >&2
+      exit 1
+    fi
+    sleep 0.5
+    n=$((n + 1))
+  done
+fi
+
+# ANTHROPIC_API_KEY (not AUTH_TOKEN) is required to override an active Claude
+# subscription login and force the custom endpoint; the value is unused here.
+ANTHROPIC_BASE_URL="$url" \
+  ANTHROPIC_API_KEY="llama" \
+  ANTHROPIC_MODEL="$label" \
+  ANTHROPIC_SMALL_FAST_MODEL="$label" \
+  exec claude "$@"

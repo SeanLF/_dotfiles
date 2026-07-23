@@ -10,7 +10,7 @@
 # Anthropic<->OpenAI proxy. The NIM key is read from 1Password at runtime and
 # never stored. -m switches both the main agent and subagents (Olla rewrites
 # the alias targets and reloads). Olla auto-starts on :40114 if not running.
-# For offline/confidential or heavy parallel work use `ccl` (local Ollama).
+# For offline/confidential or heavy parallel work use `ccl` (local llama.cpp).
 
 set -e
 

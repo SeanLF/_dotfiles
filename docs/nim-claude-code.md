@@ -15,7 +15,7 @@ copied from a benchmark leaderboard or an LLM's opinion.
 > development, testing and research" — a demo funnel toward self-hosted NIM containers and
 > paid DGX Cloud. There is no SLA and the reliability will not improve, because reliability
 > isn't the product. `ccnim` is therefore a "free ride when it's up," never load-bearing.
-> Don't over-invest in hardening it; the reliable paths are `ccl` (local Ollama), self-host,
+> Don't over-invest in hardening it; the reliable paths are `ccl` (local llama.cpp), self-host,
 > or real Claude. Design `ccnim` to **fail fast and hand off**, not to paper over a demo
 > endpoint's limits.
 

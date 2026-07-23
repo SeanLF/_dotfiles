@@ -111,12 +111,12 @@ cask "handy"
 cask "iina"
 # Official Jagex Launcher
 cask "jagex"
+# Menu bar app for running local LLMs
+cask "llama-app"
 # Reverse proxy, secure introspectable tunnels to localhost
 cask "ngrok"
 # Cloud gaming platform
 cask "nvidia-geforce-now"
-# Get up and running with large language models locally
-cask "ollama-app"
 # Replacement for Docker Desktop
 cask "orbstack"
 # VPN client focusing on security
