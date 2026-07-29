@@ -80,7 +80,7 @@ fits; don't pad a short lesson to fill five headings.
 
 ## 4. Commit it on its own
 
-`docs(solutions): <the lesson>` as a **separate commit** from the fix. The fix
+`docs(lessons): <the lesson>` as a **separate commit** from the fix. The fix
 and the lesson have different audiences and different lifetimes, and a lesson
 buried in a 12-file diff is not findable.
 
