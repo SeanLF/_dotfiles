@@ -45,6 +45,8 @@ CASES = [
     (C, 'git commit -am "nope"', "deny", "-am bad still caught"),
     (C, 'git commit -m "fixup! feat(x): y"', "allow", "autosquash allowed"),
     (C, 'git commit -m "updated the thing"', "deny", "non-conventional denied"),
+    (C, 'python3 - <<PY\nbody\nPY\ngit commit -m "not conventional"', "deny", "command after heredoc still guarded"),
+    (S, 'cat <<EOF\nnever run rg -rn foo\nEOF', "allow", "heredoc mention not denied"),
     (C, 'git commit -m "feat(x): sparkle ✨"', "deny", "emoji denied"),
     (P, "git log --grep commit -5", "allow", "read-only git log must not trip gate"),
     (P, "echo 'later: git commit -m x'", "allow", "quoted mention must not trip gate"),

@@ -1,0 +1,46 @@
+#!/bin/bash
+# Validate a commit message: Conventional Commits subject, no emoji.
+#
+# Single source of truth for the rule, called from two places that see the
+# message at different moments:
+#   - .claude/hooks/commit-guard.sh   before the agent's `git commit` runs
+#   - lefthook commit-msg             for every commit, including yours
+#
+# Usage:  check-commit-msg <file>     (git passes .git/COMMIT_EDITMSG)
+#         check-commit-msg -          (read from stdin)
+# Exit 0 on pass, 1 on failure with the reason on stderr.
+set -euo pipefail
+
+TYPES='feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert'
+
+src="${1:--}"
+if [ "$src" = "-" ]; then
+  msg=$(cat)
+else
+  [ -r "$src" ] || exit 0 # nothing to check
+  msg=$(cat "$src")
+fi
+
+# Strip comment lines git adds to the editor template.
+msg=$(printf '%s\n' "$msg" | grep -v '^#' || true)
+subject=$(printf '%s\n' "$msg" | head -1)
+
+[ -z "${subject// /}" ] && exit 0 # empty: git will abort on its own
+
+# git's own generated subjects. autosquash requires the exact prefix.
+case "$subject" in
+  fixup!* | squash!* | Revert\ * | Merge\ *) exit 0 ;;
+esac
+
+if printf '%s' "$msg" | grep -qP '[\x{1F000}-\x{1FAFF}\x{2190}-\x{2BFF}\x{2600}-\x{27BF}\x{FE0F}\x{1F1E6}-\x{1F1FF}]' 2>/dev/null; then
+  echo "commit message contains an emoji; AGENTS.md asks for conventional commits, no emoji" >&2
+  exit 1
+fi
+
+if ! printf '%s' "$subject" | grep -qE "^($TYPES)(\([^)]+\))?!?: .+"; then
+  echo "commit subject is not Conventional Commits:" >&2
+  echo "  $subject" >&2
+  echo "expected '<type>(<scope>)?: <why>' with type one of: $TYPES" >&2
+  echo "AGENTS.md also asks for the why, not the what" >&2
+  exit 1
+fi

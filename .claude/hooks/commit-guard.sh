@@ -51,7 +51,7 @@ forced() { [ -n "$SESSION_ID" ] && [ -f "$FORCE" ]; }
 # Truncate at the first heredoc marker: everything after `<<` is data, not
 # flags. Without this, a commit body that merely mentions -m or -am is scanned
 # as if it were the invocation.
-FOLDED=$(printf '%s' "${COMMAND%%<<*}" | tr '\n' '\001')
+FOLDED=$(printf '%s' "$COMMAND" | strip_heredocs | tr '\n' '\001')
 REST=""
 case "$FOLDED" in
   *' --message='*) REST="${FOLDED#* --message=}" ;;

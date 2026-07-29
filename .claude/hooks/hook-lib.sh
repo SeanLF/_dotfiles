@@ -16,22 +16,57 @@
 # Also drops heredoc bodies: everything from `<<` onward is data, not flags.
 strip_quotes() {
   awk '
-    BEGIN { RS = "\0" }
+    # Drop heredoc BODIES only, line by line. Truncating at the first "<<"
+    # instead would hide every command after the heredoc, so a `git commit`
+    # following one would never be seen.
     {
-      s = $0
-      h = index(s, "<<")
-      if (h > 0) s = substr(s, 1, h - 1)
+      line = $0
+      if (skip) {
+        t = line; gsub(/^[ \t]+|[ \t]+$/, "", t)
+        if (t == marker) skip = 0
+        next
+      }
+      if (match(line, /<<-?[ \t]*[A-Za-z_"'"'"'][A-Za-z0-9_]*/)) {
+        m = substr(line, RSTART, RLENGTH)
+        sub(/^<<-?[ \t]*/, "", m)
+        gsub(/["'"'"']/, "", m)
+        marker = m; skip = 1
+        line = substr(line, 1, RSTART - 1)
+      }
       out = ""; q = ""
-      n = length(s)
+      n = length(line)
       for (i = 1; i <= n; i++) {
-        c = substr(s, i, 1)
+        c = substr(line, i, 1)
         if (q == "") {
           if (c == "\"" || c == "'"'"'") { q = c } else { out = out c }
         } else if (c == q) {
           q = ""
         }
       }
-      printf "%s", out
+      printf "%s\n", out
+    }
+  '
+}
+
+# Drop heredoc bodies but KEEP quotes. Detection wants quotes gone; message
+# extraction needs them intact, since the quotes delimit the message itself.
+strip_heredocs() {
+  awk '
+    {
+      line = $0
+      if (skip) {
+        t = line; gsub(/^[ \t]+|[ \t]+$/, "", t)
+        if (t == marker) skip = 0
+        next
+      }
+      if (match(line, /<<-?[ \t]*[A-Za-z_"\x27][A-Za-z0-9_]*/)) {
+        m = substr(line, RSTART, RLENGTH)
+        sub(/^<<-?[ \t]*/, "", m)
+        gsub(/["\x27]/, "", m)
+        marker = m; skip = 1
+        line = substr(line, 1, RSTART - 1)
+      }
+      printf "%s\n", line
     }
   '
 }
