@@ -17,7 +17,8 @@ case "$TOOL_NAME" in
     pr-review-toolkit:code-reviewer | \
     pr-review-toolkit:code-simplifier | \
     pr-review-toolkit:silent-failure-hunter | \
-    code-simplifier:code-simplifier)
+    code-simplifier:code-simplifier | \
+    adversarial-reviewer)
     ;;
   *) exit 0 ;;
 esac

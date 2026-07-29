@@ -95,6 +95,7 @@ SENTINEL_CASES = [
     ("pr-review-toolkit:silent-failure-hunter", True),
     ("code-simplifier:code-simplifier", True),
     ("feature-dev:code-reviewer", True),
+    ("adversarial-reviewer", True),
     ("superpowers:code-reviewer", False),
     ("general-purpose", False),
 ]
