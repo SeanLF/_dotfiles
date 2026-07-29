@@ -11,7 +11,7 @@ CHECK="$HOME/Developer/_dotfiles/bin/check-commit-msg"
 [ -x "$CHECK" ] && "$CHECK" "$1"
 
 if [ -f lefthook.yml ] &&
-  [ "$(git config --bool hooks.lefthook 2>/dev/null || echo false)" = "true" ] &&
+  [ "$(git config --local --bool hooks.lefthook 2>/dev/null || echo false)" = "true" ] &&
   command -v lefthook >/dev/null 2>&1; then
   lefthook run --no-auto-install commit-msg "$@" || exit $?
 fi

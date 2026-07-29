@@ -8,13 +8,15 @@
 # back, so delegation needs per-repo opt-in. `git clone` does not import the
 # source repo's local config, which is what makes this a real boundary.
 #
-# Trust a repo with:  git config hooks.lefthook true
+# Trust a repo with:  git config --local hooks.lefthook true
+# Read at --local scope deliberately: a global value would trust every repo,
+# including hostile clones, from a single accidental setting.
 set -euo pipefail
 
 [ -f lefthook.yml ] || exit 0
-if [ "$(git config --bool hooks.lefthook 2>/dev/null || echo false)" != "true" ]; then
+if [ "$(git config --local --bool hooks.lefthook 2>/dev/null || echo false)" != "true" ]; then
   echo "pre-commit: lefthook.yml present but this repo is not trusted to run it." >&2
-  echo "  if you trust it: git config hooks.lefthook true" >&2
+  echo "  if you trust it: git config --local hooks.lefthook true" >&2
   exit 0
 fi
 command -v lefthook >/dev/null 2>&1 || exit 0
