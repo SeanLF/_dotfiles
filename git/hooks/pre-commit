@@ -3,6 +3,6 @@
 # hand off to lefthook or repos that rely on it silently lose their checks.
 set -euo pipefail
 if [ -f lefthook.yml ] && command -v lefthook >/dev/null 2>&1; then
-  exec lefthook run pre-commit "$@"
+  exec lefthook run --no-auto-install pre-commit "$@"
 fi
 exit 0
