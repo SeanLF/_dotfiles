@@ -17,9 +17,9 @@
 #
 # STALL SAFETY: this runs on UserPromptSubmit, which Claude Code executes
 # synchronously before your prompt is processed. Everything that can block --
-# `open` (LaunchServices), `osascript` (Apple Events, 120s default reply
-# timeout), terminal-notifier -- is therefore pushed into a detached
-# background block. The synchronous part is a cat, two jq calls and a printf.
+# `open` (LaunchServices) and `osascript` (Apple Events, 120s default reply
+# timeout) -- is therefore pushed into a detached background block. The
+# synchronous part is a cat, a jq call and a printf.
 # A fully wedged Ghostty or Steer must cost the session nothing.
 
 set -uo pipefail
@@ -27,7 +27,7 @@ set -uo pipefail
 # Fixed path, not $TMPDIR: on macOS TMPDIR is per-bootstrap-namespace, so
 # sessions started from a login shell, a LaunchAgent and over SSH would each
 # get a different directory and the gauge would silently count only its own.
-readonly STATE_DIR="${HOME}/.cache/claude-steer-sessions"
+readonly STATE_DIR="${STEER_AGENT_STATE_DIR:-${HOME}/.cache/claude-steer-sessions}"
 readonly DEV_APP="/Users/sean/Developer/steer/Steer Dev.app"
 readonly EVENT="${1:-}"
 
@@ -99,6 +99,12 @@ elif [ -z "${tty_name:-}" ] || [ "$tty_name" = "??" ]; then
 else
   tty_path="/dev/${tty_name}"
 fi
+
+# Test seam: capture the notification bytes instead of writing to a real tty.
+# The caller must CREATE the target first -- the emit gates on `-w`, false for a
+# path that does not exist, so an uncreated target silently measures the no-tty
+# branch while looking green.
+[ -n "${STEER_AGENT_TTY:-}" ] && tty_path="$STEER_AGENT_TTY"
 
 # --- State (synchronous: cheap, and everything downstream reads it) ----------
 case "$EVENT" in
@@ -206,12 +212,26 @@ esac
   # Controller-connected is deliberately NOT checked -- the only query route
   # returns via the pasteboard, and clobbering the clipboard on every hook fire
   # is worse than a no-op. With no pad the URLs no-op behind Steer's own guard.
+  #
+  # Match the process NAME. NOT `pgrep -f`: -f tests the whole argument list, so
+  # any process merely naming the app path satisfies the guard and `open -a`
+  # then launches it. The path comes off the pid, which no command line can forge.
+  steer_bin=""
+  steer_pid="$(pgrep -x Steer 2>/dev/null | head -1)"
+  if [ -n "$steer_pid" ]; then
+    steer_bin="$(ps -o comm= -p "$steer_pid" 2>/dev/null)"
+    # A live pid resolving to no path means `ps -o comm=` stopped returning the
+    # full executable path, which the dev-vs-release match below depends on.
+    [ -z "$steer_bin" ] &&
+      logger -t steer-agent "Steer pid ${steer_pid} resolved no path; URL routing degraded"
+  fi
+
   steer() {
-    if pgrep -f "Steer Dev.app/Contents/MacOS" >/dev/null 2>&1; then
-      open -g -a "$DEV_APP" "steer://$1" >/dev/null 2>&1
-    elif pgrep -f "/Applications/Steer.app/Contents/MacOS" >/dev/null 2>&1; then
-      open -g "steer://$1" >/dev/null 2>&1
-    fi
+    case "$steer_bin" in
+      '') return 0 ;;
+      *"Steer Dev.app"*) open -g -a "$DEV_APP" "steer://$1" >/dev/null 2>&1 ;;
+      *) open -g "steer://$1" >/dev/null 2>&1 ;;
+    esac
   }
 
   steer "leds/${waiting}"
@@ -279,44 +299,31 @@ APPLESCRIPT
     idle) steer "haptic/pulse" ;;
   esac
 
-  # The notification is the only channel carrying identity, and clicking it
-  # focuses the exact tab. `osascript display notification` cannot do this --
-  # the Standard Suite has no click handler -- hence terminal-notifier.
-  # -group replaces an earlier banner for the same session rather than stacking.
-  # Only attach the click action when Ghostty is running AND actually owns this
-  # tty. Attaching it unconditionally means a click LAUNCHES Ghostty for anyone
-  # on iTerm2/Terminal.app/VS Code -- the same hostility the pgrep guards above
-  # exist to prevent. Everything else (LED count, haptic, project name in the
-  # banner) is terminal-agnostic and still works for them.
-  can_focus=""
-  if [ -n "$tty_path" ] && pgrep -f "Ghostty.app/Contents/MacOS" >/dev/null 2>&1; then
-    [ "$(
-      osascript <<APPLESCRIPT 2>/dev/null
-with timeout of 3 seconds
-  tell application "Ghostty"
-    repeat with w in windows
-      repeat with t in tabs of w
-        repeat with trm in terminals of t
-          if (tty of trm) is "$tty_path" then return "yes"
-        end repeat
-      end repeat
-    end repeat
-  end tell
-end timeout
-return "no"
-APPLESCRIPT
-    )" = "yes" ] && can_focus=1
-  fi
-
-  if [ -n "${notify_msg:-}" ] && command -v terminal-notifier >/dev/null 2>&1; then
-    if [ -n "$can_focus" ]; then
-      terminal-notifier -title "Claude Code" -subtitle "$project" -message "$notify_msg" \
-        -group "claude-steer-${session_id}" \
-        -execute "osascript -e 'with timeout of 5 seconds' -e 'tell application \"Ghostty\" to focus (first terminal whose tty is \"${tty_path}\")' -e 'end timeout'"
-    else
-      terminal-notifier -title "Claude Code" -subtitle "$project" -message "$notify_msg" \
-        -group "claude-steer-${session_id}"
-    fi
+  # Written into the session's OWN pty, so Ghostty binds it to that surface and
+  # a click focuses the right tab with no lookup. Ghostty renders it as
+  # title / tab-title / body, hence project in the title. It also dedupes
+  # identical notifications, keyed on TEXT not session: two sessions in one
+  # project reporting the same state collapse into one banner.
+  if [ -n "$tty_path" ] && [ -w "$tty_path" ]; then
+    # `;` is the OSC field separator and ESC/BEL terminate the sequence early,
+    # spilling the remainder into the TUI. The whole C0 range goes, not just
+    # those three -- the project name is a directory name, not ours to trust.
+    printf '\033]777;notify;%s;%s\007' \
+      "$(printf '%s' "$project" | tr -d '\000-\037;')" \
+      "$(printf '%s' "$notify_msg" | tr -d '\000-\037;')" \
+      >"$tty_path" 2>/dev/null ||
+      # `-w` passed at check time; this runs detached, so the tab can close in
+      # between and the write fails ENXIO.
+      logger -t steer-agent "OSC write to ${tty_path} failed; ${EVENT} notification lost"
+  else
+    # No tty (ClaudeCode.app sessions resolve a `claude` ancestor whose tty is
+    # `??`), so no surface to bind to and no way to post an attributed clickable
+    # banner from a shell script. Deliberately silent; Claude Code's own
+    # `inputNeededNotifEnabled` is what covers this case.
+    #
+    # Every logger call here lands at DEBUG, so `log show` needs --debug or the
+    # degraded states all look like they went nowhere.
+    logger -t steer-agent "no tty for session; ${EVENT} notification suppressed"
   fi
 } >/dev/null 2>&1 </dev/null &
 
