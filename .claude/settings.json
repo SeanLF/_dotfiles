@@ -88,6 +88,14 @@
           },
           {
             "type": "command",
+            "command": "~/.claude/hooks/search-tool-guard.sh"
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/commit-guard.sh"
+          },
+          {
+            "type": "command",
             "command": "~/.claude/hooks/pre-commit-review.sh"
           },
           {

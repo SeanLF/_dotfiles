@@ -51,4 +51,18 @@ if [ -f "$FORCE" ]; then
   exit 0
 fi
 
-deny "Run review + simplifier agents before committing (CLAUDE.md). [session: ${SESSION_ID}]"
+STAGED_N=$(git diff --cached --name-only 2>/dev/null | wc -l | tr -d ' ')
+SCOPE="${STAGED_N} file(s) staged."
+if [ "${STAGED_N:-0}" -gt 3 ]; then
+  SCOPE="${STAGED_N} files staged, which is over the 3-file threshold: run the review, no exceptions."
+fi
+
+deny "Review gate. ${SCOPE}
+
+Run these first: code-reviewer and code-simplifier; add silent-failure-hunter if error handling changed, and an adversarial pass (ask a subagent to refute the change, not confirm it).
+
+To skip for a trivial or purely mechanical change, run EXACTLY this as its own Bash call, then retry the commit:
+
+  touch ${FORCE}
+
+It must be a separate call: this hook fires before your command runs, so 'touch ... && git commit' always denies. The marker is consumed on use, so re-touch after any pre-commit failure (prettier rewrite, lefthook)."
