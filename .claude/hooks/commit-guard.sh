@@ -36,12 +36,39 @@ deny() {
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty' 2>/dev/null)
 FORCE="/tmp/claude-commit-force-${SESSION_ID}"
 
-# Conditional rules share the existing sentinel. Consumed on use, so a single
-# touch buys exactly one commit, and it must be its own Bash call.
+# TEST the sentinel, never consume it. pre-commit-review.sh owns the rm; if
+# both hooks consumed it, one touch would satisfy one gate and the other would
+# still deny, with no way to satisfy both. That was a livelock.
 forced() { [ -n "$SESSION_ID" ] && [ -f "$FORCE" ]; }
 
 # --- absolute: message shape -----------------------------------------------
-MSG=$(echo "$COMMAND" | sed -n "s/.*-m[[:space:]]*'\([^']*\)'.*/\1/p; s/.*-m[[:space:]]*\"\([^\"]*\)\".*/\1/p" | head -1)
+# Fold newlines so a multi-line body is reachable, then take the FIRST message
+# flag. A greedy match takes the LAST -m, which validates the body against the
+# subject regex and rejects every standard subject+body commit.
+# Truncate at the first heredoc marker: everything after `<<` is data, not
+# flags. Without this, a commit body that merely mentions -m or -am is scanned
+# as if it were the invocation.
+FOLDED=$(printf '%s' "${COMMAND%%<<*}" | tr '\n' '\001')
+REST=""
+case "$FOLDED" in
+  *' --message='*) REST="${FOLDED#* --message=}" ;;
+  *' -m '*) REST="${FOLDED#* -m }" ;;
+  *' -am '*) REST="${FOLDED#* -am }" ;;
+  *' -ma '*) REST="${FOLDED#* -ma }" ;;
+esac
+
+MSG=""
+case "$REST" in
+  \'*)
+    MSG="${REST#\'}"
+    MSG="${MSG%%\'*}"
+    ;;
+  \"*)
+    MSG="${REST#\"}"
+    MSG="${MSG%%\"*}"
+    ;;
+  ?*) MSG="${REST%% *}" ;;
+esac
 
 # The hook sees the command pre-expansion, so a message built from a variable
 # or a substitution is opaque here. Validating the literal text would reject
@@ -49,20 +76,24 @@ MSG=$(echo "$COMMAND" | sed -n "s/.*-m[[:space:]]*'\([^']*\)'.*/\1/p; s/.*-m[[:s
 case "$MSG" in *'$'* | *'`'*) MSG="" ;; esac
 
 if [ -n "$MSG" ]; then
-  if printf '%s' "$MSG" | LC_ALL=C grep -qE $'\xf0\x9f|\xe2\x9c|\xe2\x9d|\xe2\x9a|\xe2\xad|\xe2\x9e'; then
+  # Emoji can appear anywhere; Conventional Commits governs the subject only.
+  SUBJECT="${MSG%%$'\001'*}"
+  if printf '%s' "$MSG" | LC_ALL=C grep -qE $'\xf0\x9f|\xe2\x9c|\xe2\x9d|\xe2\x9a|\xe2\xad|\xe2\x9e|\xe2\x8f|\xe2\x80\xbc'; then
     deny "Commit message contains an emoji. AGENTS.md: conventional, no emoji. Rewrite without it."
   fi
-  if ! printf '%s' "$MSG" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([^)]+\))?!?: .+'; then
-    deny "Commit message is not Conventional Commits: '${MSG}'. Expected '<type>(<scope>)?: <why>' with type one of feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert. AGENTS.md also asks for the why, not the what."
-  fi
+  case "$SUBJECT" in
+    fixup!* | squash!* | Revert\ * | Merge\ *) ;; # git's own generated forms
+    *)
+      if ! printf '%s' "$SUBJECT" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([^)]+\))?!?: .+'; then
+        deny "Commit message is not Conventional Commits: '${SUBJECT}'. Expected '<type>(<scope>)?: <why>' with type one of feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert. AGENTS.md also asks for the why, not the what."
+      fi
+      ;;
+  esac
 fi
 
 # --- conditional: --amend ---------------------------------------------------
 if echo "$STRIPPED" | grep -qE '(^|[[:space:]])--amend([[:space:]]|$)'; then
-  forced && {
-    rm -f "$FORCE"
-    exit 0
-  }
+  forced && exit 0
   deny "git commit --amend is disallowed unless asked (AGENTS.md). If I asked, run 'touch ${FORCE}' as its own Bash call first, then retry."
 fi
 
@@ -71,10 +102,7 @@ STAGED=$(git diff --cached --name-only 2>/dev/null)
 if [ -n "$STAGED" ]; then
   OFFENDERS=$(printf '%s\n' "$STAGED" | grep -iE '(^|/)(scratch/|.*\bplan\b.*\.md$|TODO(\.md)?$|.*-plan\.md$)' | head -5)
   if [ -n "$OFFENDERS" ]; then
-    forced && {
-      rm -f "$FORCE"
-      exit 0
-    }
+    forced && exit 0
     deny "Staged files look like plans/TODOs/scratch, which AGENTS.md says not to commit unless asked: $(echo "$OFFENDERS" | tr '\n' ' '). Unstage them, or if I asked for them, run 'touch ${FORCE}' as its own Bash call first."
   fi
 fi

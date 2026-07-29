@@ -27,12 +27,18 @@ deny() {
   exit 0
 }
 
-warn() {
-  jq -n --arg c "$1" \
+# Records the warning; does NOT exit. Exiting here let a leading grep/find
+# segment short-circuit the loop before a later `rg` segment was ever tested,
+# downgrading the no-hatch deny to an advisory.
+WARNING=""
+warn() { WARNING="$1"; }
+
+emit_warning() {
+  [ -z "$WARNING" ] && return 0
+  jq -n --arg c "$WARNING" \
     '{hookSpecificOutput:{hookEventName:"PreToolUse",additionalContext:$c}}' \
     2>/dev/null
-  echo "$1" >&2
-  exit 0
+  echo "$WARNING" >&2
 }
 
 # Strip quoted strings, then split on command separators. Without this, merely
@@ -69,4 +75,6 @@ while IFS= read -r seg; do
   esac
 done <<<"$SEGMENTS"
 
+# Deny always wins; warnings are emitted only if nothing denied.
+emit_warning
 exit 0
