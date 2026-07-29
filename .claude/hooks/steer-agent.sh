@@ -100,10 +100,7 @@ else
   tty_path="/dev/${tty_name}"
 fi
 
-# Test seam: capture the notification bytes instead of writing to a real tty.
-# The caller must CREATE the target first -- the emit gates on `-w`, false for a
-# path that does not exist, so an uncreated target silently measures the no-tty
-# branch while looking green.
+# Test seam. The target must already exist; the emit gates on `-w`.
 [ -n "${STEER_AGENT_TTY:-}" ] && tty_path="$STEER_AGENT_TTY"
 
 # --- State (synchronous: cheap, and everything downstream reads it) ----------
@@ -213,15 +210,11 @@ esac
   # returns via the pasteboard, and clobbering the clipboard on every hook fire
   # is worse than a no-op. With no pad the URLs no-op behind Steer's own guard.
   #
-  # Match the process NAME. NOT `pgrep -f`: -f tests the whole argument list, so
-  # any process merely naming the app path satisfies the guard and `open -a`
-  # then launches it. The path comes off the pid, which no command line can forge.
+  # -x, never -f: -f matches any argv merely naming the path, and would launch it.
   steer_bin=""
   steer_pid="$(pgrep -x Steer 2>/dev/null | head -1)"
   if [ -n "$steer_pid" ]; then
     steer_bin="$(ps -o comm= -p "$steer_pid" 2>/dev/null)"
-    # A live pid resolving to no path means `ps -o comm=` stopped returning the
-    # full executable path, which the dev-vs-release match below depends on.
     [ -z "$steer_bin" ] &&
       logger -t steer-agent "Steer pid ${steer_pid} resolved no path; URL routing degraded"
   fi
@@ -299,30 +292,19 @@ APPLESCRIPT
     idle) steer "haptic/pulse" ;;
   esac
 
-  # Written into the session's OWN pty, so Ghostty binds it to that surface and
-  # a click focuses the right tab with no lookup. Ghostty renders it as
-  # title / tab-title / body, hence project in the title. It also dedupes
-  # identical notifications, keyed on TEXT not session: two sessions in one
-  # project reporting the same state collapse into one banner.
+  # Ghostty binds a notification from a pty to that surface, so clicking it
+  # focuses the tab. It dedupes on text, not on session.
   if [ -n "$tty_path" ] && [ -w "$tty_path" ]; then
-    # `;` is the OSC field separator and ESC/BEL terminate the sequence early,
-    # spilling the remainder into the TUI. The whole C0 range goes, not just
-    # those three -- the project name is a directory name, not ours to trust.
+    # Any C0 or `;` would break out of the sequence; `project` is a dirname.
     printf '\033]777;notify;%s;%s\007' \
       "$(printf '%s' "$project" | tr -d '\000-\037;')" \
       "$(printf '%s' "$notify_msg" | tr -d '\000-\037;')" \
       >"$tty_path" 2>/dev/null ||
-      # `-w` passed at check time; this runs detached, so the tab can close in
-      # between and the write fails ENXIO.
       logger -t steer-agent "OSC write to ${tty_path} failed; ${EVENT} notification lost"
   else
-    # No tty (ClaudeCode.app sessions resolve a `claude` ancestor whose tty is
-    # `??`), so no surface to bind to and no way to post an attributed clickable
-    # banner from a shell script. Deliberately silent; Claude Code's own
-    # `inputNeededNotifEnabled` is what covers this case.
-    #
-    # Every logger call here lands at DEBUG, so `log show` needs --debug or the
-    # degraded states all look like they went nowhere.
+    # Deliberately silent: no surface to bind to, and a shell script cannot post
+    # an attributed banner. Claude Code's inputNeededNotifEnabled covers this.
+    # Every logger call in this file lands at DEBUG; `log show` needs --debug.
     logger -t steer-agent "no tty for session; ${EVENT} notification suppressed"
   fi
 } >/dev/null 2>&1 </dev/null &
