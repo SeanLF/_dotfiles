@@ -61,7 +61,13 @@ fi
 
 deny "Review gate. ${SCOPE}
 
-Run these first: code-reviewer and code-simplifier; add silent-failure-hunter if error handling changed, and an adversarial pass (ask a subagent to refute the change, not confirm it).
+Running any ONE of these clears the gate (exact subagent_type, the prefix matters):
+  pr-review-toolkit:code-reviewer
+  pr-review-toolkit:code-simplifier
+  pr-review-toolkit:silent-failure-hunter   <- if error handling changed
+  code-simplifier:code-simplifier
+  feature-dev:code-reviewer
+Any other name, including superpowers:code-reviewer, does not exist or does not clear it. Worth adding but NOT checked: an adversarial pass asking a subagent to refute the change rather than confirm it.
 
 To skip for a trivial or purely mechanical change, run EXACTLY this as its own Bash call, then retry the commit:
 

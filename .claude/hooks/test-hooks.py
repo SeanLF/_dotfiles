@@ -68,4 +68,54 @@ fails += a != "allow" or not still
 pathlib.Path(FORCE).unlink(missing_ok=True)
 
 print()
+print("=== sentinel: every name the deny message gives must clear the gate ===")
+SENT = H / "post-review-sentinel.sh"
+SENT_MARK = pathlib.Path("/tmp/claude-review-done-senttest")
+
+
+def fires(agent):
+    SENT_MARK.unlink(missing_ok=True)
+    subprocess.run(
+        [str(SENT)],
+        input=json.dumps({"session_id": "senttest", "tool_input": {"subagent_type": agent}}),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    hit = SENT_MARK.exists()
+    SENT_MARK.unlink(missing_ok=True)
+    return hit
+
+
+# Must clear: exactly the names pre-commit-review.sh tells you to run.
+# Must not: a name that does not exist, and an unrelated agent.
+SENTINEL_CASES = [
+    ("pr-review-toolkit:code-reviewer", True),
+    ("pr-review-toolkit:code-simplifier", True),
+    ("pr-review-toolkit:silent-failure-hunter", True),
+    ("code-simplifier:code-simplifier", True),
+    ("feature-dev:code-reviewer", True),
+    ("superpowers:code-reviewer", False),
+    ("general-purpose", False),
+]
+for agent, want in SENTINEL_CASES:
+    got = fires(agent)
+    ok = got == want
+    fails += not ok
+    print(f"{'ok  ' if ok else 'FAIL'} {agent:<44} clears={got} (want {want})")
+
+# The deny message must not name anything that cannot clear the gate.
+named = [
+    ln.strip()
+    for ln in (H / "pre-commit-review.sh").read_text().splitlines()
+    if ln.strip().count(":") == 1 and ln.strip().split(":")[0] in
+    {"pr-review-toolkit", "code-simplifier", "feature-dev", "superpowers"}
+]
+for n in named:
+    agent = n.split()[0]
+    if not fires(agent):
+        print(f"FAIL deny message names {agent}, which does not clear the gate")
+        fails += 1
+
+print()
 print("FAILURES:", fails)
