@@ -1,10 +1,17 @@
 #!/bin/bash
 # Global commit-msg. Applies to every repo via core.hooksPath, so the message
-# rules do not have to be wired into each repo's lefthook.yml.
+# rules do not have to be wired into each repo.
+#
+# check-commit-msg lives at a fixed path in _dotfiles, so it is trusted no
+# matter which repo we are standing in. lefthook.yml is repo-controlled and is
+# gated behind the same opt-in the other hooks use.
 set -euo pipefail
+
 CHECK="$HOME/Developer/_dotfiles/bin/check-commit-msg"
 [ -x "$CHECK" ] && "$CHECK" "$1"
-# Delegate to lefthook if this repo configures it; a no-op when it does not.
-if [ -f lefthook.yml ] && command -v lefthook >/dev/null 2>&1; then
+
+if [ -f lefthook.yml ] &&
+  [ "$(git config --bool hooks.lefthook 2>/dev/null || echo false)" = "true" ] &&
+  command -v lefthook >/dev/null 2>&1; then
   lefthook run --no-auto-install commit-msg "$@" || exit $?
 fi

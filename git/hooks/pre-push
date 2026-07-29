@@ -1,8 +1,21 @@
 #!/bin/bash
 # Global pre-push. core.hooksPath replaces the whole hooks directory, so this must
-# hand off to lefthook or repos that rely on it silently lose their checks.
+# hand off to lefthook or repos relying on it silently lose their checks.
+#
+# SECURITY: lefthook.yml is repo-controlled and runs arbitrary commands. Git
+# never clones .git/hooks precisely so that cloning cannot execute a repo's
+# code. Delegating unconditionally from a global hook hands that protection
+# back, so delegation needs per-repo opt-in. `git clone` does not import the
+# source repo's local config, which is what makes this a real boundary.
+#
+# Trust a repo with:  git config hooks.lefthook true
 set -euo pipefail
-if [ -f lefthook.yml ] && command -v lefthook >/dev/null 2>&1; then
-  exec lefthook run --no-auto-install pre-push "$@"
+
+[ -f lefthook.yml ] || exit 0
+if [ "$(git config --bool hooks.lefthook 2>/dev/null || echo false)" != "true" ]; then
+  echo "pre-push: lefthook.yml present but this repo is not trusted to run it." >&2
+  echo "  if you trust it: git config hooks.lefthook true" >&2
+  exit 0
 fi
-exit 0
+command -v lefthook >/dev/null 2>&1 || exit 0
+exec lefthook run --no-auto-install pre-push "$@"
