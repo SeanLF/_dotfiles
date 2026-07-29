@@ -137,5 +137,8 @@ mas "Flighty", id: 1358823008
 mas "TestFlight", id: 899247664
 mas "WhatsApp", id: 310633997
 mas "Xcode", id: 497799835
+go "cmd/go"
+go "cmd/gofmt"
+go "github.com/sqlc-dev/sqlc/cmd/sqlc"
 cargo "cargo-cyclonedx"
 uv "osxphotos"
