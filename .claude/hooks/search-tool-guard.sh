@@ -10,6 +10,12 @@
 #   WARN  bare `grep` / `find`, which Claude Code shadows with `ugrep -G
 #         --ignore-files` and `bfs`. Non-blocking: real uses exist mid-pipeline.
 #
+#   WARN  sed/perl/ruby `-i`. Same failure shape as `rg -r`: exits 0 having
+#         changed nothing when the pattern misses, so a no-op edit is
+#         indistinguishable from an applied one. Warn, not deny -- 305 of 228k
+#         historical commands use it, and bulk multi-file rewrites are a real
+#         use Edit cannot serve.
+#
 # Fails OPEN: a search guard that blocks work on its own bugs is worse than the
 # bug it guards. Contrast pre-commit-review.sh, which fails closed by design.
 set -o pipefail
@@ -32,8 +38,19 @@ deny() {
 # Records the warning; does NOT exit. Exiting here let a leading grep/find
 # segment short-circuit the loop before a later `rg` segment was ever tested,
 # downgrading the no-hatch deny to an advisory.
+#
+# APPENDS, and dedupes: with more than one warn rule, assignment meant the last
+# matching segment silently dropped every earlier warning, so `sed -i ... &&
+# grep ...` reported only the grep note. Dedupe because one rule can match
+# several segments.
 WARNING=""
-warn() { WARNING="$1"; }
+warn() {
+  case "$WARNING" in
+    *"$1"*) return 0 ;;
+  esac
+  WARNING="${WARNING:+$WARNING
+}$1"
+}
 
 emit_warning() {
   [ -z "$WARNING" ] && return 0
@@ -78,6 +95,42 @@ while IFS= read -r seg; do
       warn "Note: bash-tool grep/find are shadowed by Claude Code (grep -> 'ugrep -G --ignore-files', find -> bfs). BRE makes + ? | { } literal, and gitignored/hidden files are skipped, so no-match does not mean absent. Prefer rg/fd; use 'rg -uu' before mutating anything, or 'command grep'/'ggrep' for real GNU behaviour."
       ;;
   esac
+  # --- WARN: in-place edit idioms ----------------------------------------
+  # Every single-dash cluster holding an `i` is examined, not just the first:
+  # `perl -Ilib -pi -e` has a decoy cluster before the real one. Requiring the
+  # `i` to END its cluster was wrong -- GNU sed reads `-in` as -i with suffix
+  # "n" -- and a pure-letter run cannot cross the digit in `perl -0pi`.
+  # A bareword-only match missed `gsed` (installed by this repo's Brewfile) and
+  # `/usr/bin/sed`, both directly runnable, so allow a path or the GNU g prefix.
+  TOOL=$(printf '%s' "$seg" |
+    grep -oE '(^|[[:space:]])([^[:space:]]*/)?g?(sed|perl|ruby)([[:space:]]|$)' |
+    head -1 | grep -oE 'sed|perl|ruby')
+  if [ -n "$TOOL" ]; then
+    # Which flags take a VALUE is per-tool, and one shared table was wrong: `r`
+    # is value-taking for ruby (-rnokogiri) but a bare toggle for sed, so
+    # `sed -ri` was silently excluded.
+    case "$TOOL" in
+      sed) VALFLAGS='ef' ;;
+      perl) VALFLAGS='eEIMmFxCSD' ;;
+      *) VALFLAGS='eIrCEFKSxT' ;;
+    esac
+    INPLACE=""
+    CLUSTERS=$(printf '%s' "$seg" |
+      grep -oE '(^|[[:space:]])-[a-zA-Z0-9.]*i[a-zA-Z0-9.]*' | tr -d ' \t')
+    while IFS= read -r cl; do
+      [ -z "$cl" ] && continue
+      # A value-taking flag before the `i` means the `i` is inside that flag's
+      # value, not a toggle.
+      printf '%s' "${cl%%i*}" | grep -q "[$VALFLAGS]" && continue
+      INPLACE=1
+      break
+    done <<<"$CLUSTERS"
+    if [ -n "$INPLACE" ] ||
+      printf '%s' "$seg" | grep -qE '(^|[[:space:]])--in-?place([[:space:]=]|$)'; then
+      warn "Note: sed/perl/ruby -i rewrite in place and exit 0 even when the pattern matched nothing, so an edit that never applied looks identical to one that did. Prefer the Edit tool, which errors on no match. If you need the in-place form (bulk or multi-file), verify it landed -- re-read or diff the file -- rather than assuming."
+    fi
+  fi
+
   # --- DENY: rtk init that clobbers dotfiles-managed symlinks -------------
   # `rtk init -g --codex` / `--gemini` overwrite ~/.codex/AGENTS.md and
   # ~/.gemini/GEMINI.md, which are symlinks into this repo (rtk-ai/rtk#834).
