@@ -137,7 +137,7 @@
   "verbose": true,
   "preferredNotifChannel": "ghostty",
   "remoteControlAtStartup": false,
-  "inputNeededNotifEnabled": true,
+  "inputNeededNotifEnabled": false,
   "agentPushNotifEnabled": true,
   "skipAutoPermissionPrompt": true,
   "voiceEnabled": true
