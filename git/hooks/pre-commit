@@ -1,0 +1,8 @@
+#!/bin/bash
+# Global pre-commit. core.hooksPath replaces the whole hooks directory, so this must
+# hand off to lefthook or repos that rely on it silently lose their checks.
+set -euo pipefail
+if [ -f lefthook.yml ] && command -v lefthook >/dev/null 2>&1; then
+  exec lefthook run pre-commit "$@"
+fi
+exit 0

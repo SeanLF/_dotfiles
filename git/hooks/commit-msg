@@ -1,0 +1,10 @@
+#!/bin/bash
+# Global commit-msg. Applies to every repo via core.hooksPath, so the message
+# rules do not have to be wired into each repo's lefthook.yml.
+set -euo pipefail
+CHECK="$HOME/Developer/_dotfiles/bin/check-commit-msg"
+[ -x "$CHECK" ] && "$CHECK" "$1"
+# Delegate to lefthook if this repo configures it; a no-op when it does not.
+if [ -f lefthook.yml ] && command -v lefthook >/dev/null 2>&1; then
+  lefthook run commit-msg "$@" || exit $?
+fi
