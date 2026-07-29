@@ -10,6 +10,6 @@ Fewest words that stay clear; cut what won't change what I'd do next. Comment wh
 
 **Commits.** Conventional, no emoji, always _why_ not _what_. Never amend or commit plans, TODOs, or scratch unless I ask.
 
-**Delegation.** Never to check my own work. Cheap models at low effort, never cheap at high (`docs/usage-economics.md`).
+**Delegation.** Not mid-task to re-check my own work; the commit gate is separate and stands. Cheap models at low effort, never cheap at high (`docs/usage-economics.md`).
 
 **Environment.** Canadian spelling, no em dash; voice: `~/Developer/_dotfiles/writing-style.md`. Specs and decisions in `docs/`, throwaway in gitignored `scratch/`, nothing durable in a gitignored path. `sudo` and `op` (1Password) use Touch ID, just run them. `/deploy-check` before deploying, `/security-review` before shipping a security surface.
