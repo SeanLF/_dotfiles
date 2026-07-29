@@ -6,6 +6,8 @@
 #   /tmp/claude-review-done-<session_id>  -- created by post-review-sentinel.sh
 #   /tmp/claude-commit-force-<session_id> -- manual escape hatch for squash/rebase
 set -o pipefail
+# shellcheck source=/dev/null
+. "$(dirname "${BASH_SOURCE[0]}")/hook-lib.sh"
 
 DENY_FALLBACK='{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"pre-commit-review: hook error, denying as safety measure"}}'
 
@@ -26,7 +28,7 @@ INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty') || deny "failed to parse hook input"
 
 # Only trigger on git commit commands
-if ! echo "$COMMAND" | grep -qE '(^|[;&|])\s*git\s+(\S+\s+)*commit(\s|$)'; then
+if ! is_git_commit "$(printf '%s' "$COMMAND" | strip_quotes)"; then
   exit 0
 fi
 

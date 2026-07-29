@@ -1,0 +1,45 @@
+#!/bin/bash
+# Shared helpers for the PreToolUse Bash guards.
+#
+# Sourced, never executed. Every function here must be safe to call when the
+# input is hostile or malformed, because the callers fail open.
+
+# Remove quoted regions from a command string, tracking quote state properly.
+#
+# The obvious `sed "s/'[^']*'//g; s/\"[^\"]*\"//g"` is wrong: it pairs quotes by
+# position, not by state. Given `echo "don't" && rg -rn foo` it pairs the
+# apostrophe inside the double-quoted word with the next single quote in the
+# line and deletes everything between, taking the real `rg` invocation with it.
+# The guard then silently sees nothing to guard. Contractions are routine, so
+# this fires often, and the failure mode is silence.
+#
+# Also drops heredoc bodies: everything from `<<` onward is data, not flags.
+strip_quotes() {
+  awk '
+    BEGIN { RS = "\0" }
+    {
+      s = $0
+      h = index(s, "<<")
+      if (h > 0) s = substr(s, 1, h - 1)
+      out = ""; q = ""
+      n = length(s)
+      for (i = 1; i <= n; i++) {
+        c = substr(s, i, 1)
+        if (q == "") {
+          if (c == "\"" || c == "'"'"'") { q = c } else { out = out c }
+        } else if (c == q) {
+          q = ""
+        }
+      }
+      printf "%s", out
+    }
+  '
+}
+
+# A `git commit` invocation, as opposed to a mention of one or a different git
+# subcommand that happens to contain the word. Only dash-options and the
+# argument of -C/-c/--git-dir/--work-tree may sit between `git` and `commit`,
+# so `git log --grep commit` does not match while `git -C /path commit` does.
+is_git_commit() {
+  printf '%s' "$1" | grep -qE '(^|[;&|][[:space:]]*)[[:space:]]*git([[:space:]]+(-[cC][[:space:]]+[^[:space:]]+|--(git-dir|work-tree|namespace|exec-path)([= ])[^[:space:]]+|-[^[:space:]]+))*[[:space:]]+commit([[:space:]]|$)'
+}

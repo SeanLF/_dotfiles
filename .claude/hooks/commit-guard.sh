@@ -15,6 +15,8 @@
 # Fails OPEN on its own errors: a malformed message is cheaper than a wedged
 # session. Contrast pre-commit-review.sh, which fails closed by design.
 set -o pipefail
+# shellcheck source=/dev/null
+. "$(dirname "${BASH_SOURCE[0]}")/hook-lib.sh"
 
 command -v jq &>/dev/null || exit 0
 
@@ -23,13 +25,14 @@ COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null) || e
 [ -z "$COMMAND" ] && exit 0
 
 # Only git commit. Not `git commit-tree`, not a mention inside a quoted string.
-STRIPPED=$(echo "$COMMAND" | sed "s/'[^']*'//g; s/\"[^\"]*\"//g")
-echo "$STRIPPED" | grep -qE '(^|[;&|][[:space:]]*)[[:space:]]*git[[:space:]]+(-[^[:space:]]+[[:space:]]+)*commit([[:space:]]|$)' || exit 0
+STRIPPED=$(printf '%s' "$COMMAND" | strip_quotes)
+is_git_commit "$STRIPPED" || exit 0
 
 deny() {
   jq -n --arg r "$1" \
     '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}' \
-    2>/dev/null
+    2>/dev/null ||
+    echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"commit-guard: could not render the reason; denying rather than silently allowing"}}'
   exit 0
 }
 
@@ -78,7 +81,8 @@ case "$MSG" in *'$'* | *'`'*) MSG="" ;; esac
 if [ -n "$MSG" ]; then
   # Emoji can appear anywhere; Conventional Commits governs the subject only.
   SUBJECT="${MSG%%$'\001'*}"
-  if printf '%s' "$MSG" | LC_ALL=C grep -qE $'\xf0\x9f|\xe2\x9c|\xe2\x9d|\xe2\x9a|\xe2\xad|\xe2\x9e|\xe2\x8f|\xe2\x80\xbc'; then
+  if printf '%s' "$MSG" | grep -qP '[\x{1F000}-\x{1FAFF}\x{2190}-\x{2BFF}\x{2600}-\x{27BF}\x{FE0F}\x{1F1E6}-\x{1F1FF}]' 2>/dev/null ||
+    printf '%s' "$MSG" | LC_ALL=C grep -qE $'\xf0\x9f|\xe2\x9c|\xe2\x9d|\xe2\x9a|\xe2\xad|\xe2\x9e|\xe2\x8f|\xe2\x80\xbc'; then
     deny "Commit message contains an emoji. AGENTS.md: conventional, no emoji. Rewrite without it."
   fi
   case "$SUBJECT" in
@@ -98,9 +102,15 @@ if echo "$STRIPPED" | grep -qE '(^|[[:space:]])--amend([[:space:]]|$)'; then
 fi
 
 # --- conditional: staged plans / TODOs / scratch ----------------------------
+# -a/-am stage at commit time, after this hook runs, so the index looks
+# empty and the scan would pass a commit that sweeps in exactly these files.
 STAGED=$(git diff --cached --name-only 2>/dev/null)
+if printf '%s' "$STRIPPED" | grep -qE '(^|[[:space:]])-[a-zA-Z]*a[a-zA-Z]*([[:space:]]|$)|--all([[:space:]]|$)'; then
+  STAGED="${STAGED}
+$(git diff --name-only 2>/dev/null)"
+fi
 if [ -n "$STAGED" ]; then
-  OFFENDERS=$(printf '%s\n' "$STAGED" | grep -iE '(^|/)(scratch/|.*\bplan\b.*\.md$|TODO(\.md)?$|.*-plan\.md$)' | head -5)
+  OFFENDERS=$(printf '%s\n' "$STAGED" | grep -iE '(^|/)(scratch/|plans?/|plan\.md$|.*[-_]plan\.md$|TODO(\.md)?$)' | head -5)
   if [ -n "$OFFENDERS" ]; then
     forced && exit 0
     deny "Staged files look like plans/TODOs/scratch, which AGENTS.md says not to commit unless asked: $(echo "$OFFENDERS" | tr '\n' ' '). Unstage them, or if I asked for them, run 'touch ${FORCE}' as its own Bash call first."
