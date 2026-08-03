@@ -6,6 +6,9 @@ theme = light:Rose Pine Dawn,dark:Rose Pine
 # macOS: Integrate tabs into titlebar for cleaner look
 macos-titlebar-style = tabs
 
+# Start zoomed: 4 cmd+= steps above Ghostty's default 13 (each step is 1pt)
+font-size = 17
+
 # Window size and padding
 window-height = 1080
 window-width = 1920
