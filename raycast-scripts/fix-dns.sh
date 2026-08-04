@@ -35,10 +35,17 @@ if /usr/local/bin/tailscale dns status 2>/dev/null | grep -q "Tailscale DNS: ena
   fixes+=("disabled Tailscale DNS override")
 fi
 
-# Ensure MagicDNS search domain is set (shared script, also runs at boot)
-if ! scutil --dns 2>/dev/null | grep -q "ts.net"; then
-  sudo "$DIR/bin/tailscale-search-domain" 2>/dev/null
+# Sync the MagicDNS search domain with Tailscale's real state (shared script,
+# also runs at boot). Called unconditionally: the script decides add vs remove
+# itself, and guarding on "ts.net absent" skipped the one case worth fixing by
+# hand, where the key is present but the tunnel is down and DNS is blacked out.
+before=$(scutil --dns 2>/dev/null | grep -c "ts.net")
+sudo "$DIR/bin/tailscale-search-domain"
+after=$(scutil --dns 2>/dev/null | grep -c "ts.net")
+if [[ "$before" -eq 0 && "$after" -gt 0 ]]; then
   fixes+=("added MagicDNS search domain")
+elif [[ "$before" -gt 0 && "$after" -eq 0 ]]; then
+  fixes+=("removed stale MagicDNS search domain")
 fi
 
 # Flush cache

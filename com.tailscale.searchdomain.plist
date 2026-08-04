@@ -8,9 +8,20 @@
     <array>
         <string>__DOTFILES_DIR__/bin/tailscale-search-domain</string>
     </array>
+    <!-- ipnport is a symlink to the API port, written once when the network
+         extension starts. It fires this job at boot and on extension restart,
+         but NOT on `tailscale down`: the extension stays alive on the same port,
+         so the path never changes. Measured: mtime stayed at boot+2min while the
+         backend went to Stopped. That is the exact transition the script exists
+         to handle, so WatchPaths alone left the machine in the blackout state. -->
     <key>WatchPaths</key>
     <array>
         <string>/Library/Tailscale/ipnport</string>
     </array>
+    <!-- Bounds the blackout window, since no file reliably marks the transition.
+         The script is idempotent and exits in milliseconds when there is nothing
+         to do, and the failure it prevents takes out all DNS on the machine. -->
+    <key>StartInterval</key>
+    <integer>60</integer>
 </dict>
 </plist>
