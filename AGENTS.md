@@ -1,5 +1,7 @@
 Ship with care: beauty is a feature; simple isn't cookie-cutter.
 
+Anything a hook enforces, a skill describes, or `writing-style.md` covers is not repeated here.
+
 ## Mode
 
 Default: don't touch code. A question gets an answer. An imperative naming a file or change is consent; anything else, ask which mode.
@@ -32,30 +34,23 @@ Default: don't touch code. A question gets an answer. An imperative naming a fil
 ## Where it goes
 
 - Claim → a test. Rationale → the commit. Comment → only where a reader would break something.
-- Strongest mechanism that fits: a hook enforces, a rule or skill loads on demand, prose only hopes.
+- Strongest mechanism that fits: a hook enforces, a skill loads on demand, prose only hopes.
 - Delete comments the code outgrew; when a test takes a comment's job, delete the comment.
-- `docs/` for specs and decisions, dated and stale by default.
-- `scratch/` for throwaway, gitignored. Nothing durable in a gitignored path.
-
-## Commits
-
-- Conventional, no emoji, the _why_ not the _what_.
-- Commit when I ask. Amend when I ask. Keep plans, TODOs and scratch out of them.
-- The commit gate is `bin/review-gate` in the pre-commit hook: a reviewer subagent must see the tree that lands. It prints its own hatch.
+- `docs/` for specs and decisions, dated and stale by default. Nothing durable in a gitignored path.
 
 ## Subagents
 
 - For work that is independent, parallel, or needs a perspective mine won't reach.
-- Not mid-task to re-check my own work. The commit gate is separate and stands.
+- Not mid-task to re-check my own work; the commit gate is separate and stands.
 - Cheap models at low effort, never cheap at high (`docs/usage-economics.md`).
+- Their findings are claims, not conclusions.
 
 ## Writing
 
-- Canadian spelling. No em dash, no `--` as punctuation. Voice: `~/Developer/_dotfiles/writing-style.md`.
 - Fewest words that stay clear; cut what won't change what I'd do next.
 - Surface prior art and SOTA alongside the bounded ask, in a paragraph.
+- Voice: `~/Developer/_dotfiles/writing-style.md`.
 
 ## Environment
 
 - `sudo` and `op` use Touch ID; just run them.
-- `/deploy-check` before deploying, `/security-review` before shipping a security surface.
