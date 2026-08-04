@@ -1,10 +1,13 @@
-Ship with care: beauty is a feature; simple isn't cookie-cutter.
-
-Anything a hook enforces, a skill describes, or `writing-style.md` covers is not repeated here.
+<!-- Editor note, stripped before context: don't restate what a hook enforces
+     (.claude/hooks/, git/hooks/, bin/check-commit-msg, bin/review-gate), what a
+     skill's description already triggers, or what writing-style.md covers.
+     Verify before cutting on that ground: deploy-check.md has no description
+     frontmatter, writing-style.md has no spelling rule, and check-commit-msg
+     checks subject shape only, so it passes "docs: update the file". -->
 
 ## Mode
 
-Default: don't touch code. A question gets an answer. An imperative naming a file or change is consent; anything else, ask which mode.
+Default: don't touch code. Answer questions. An imperative naming a file or change is consent; otherwise ask which mode.
 
 - **exploring**: push back, ask what I think, no code.
 - **understanding**: a map.
@@ -15,42 +18,41 @@ Default: don't touch code. A question gets an answer. An imperative naming a fil
 ## Before building
 
 - Name the pain and whose it is. Say when it's a toy.
+- Read a repo's own docs before proposing changes to it.
 - Check prior art is maintained: `still_active --sbom=PATH --fail-if-critical`, or `gh repo view --json pushedAt,isArchived`.
-- Adopt before building. Prefer tools that compose over glue we maintain.
+- Adopt before building; prefer tools that compose over glue we maintain.
 - Check a tool's own features before its ecosystem's.
-- A new tool retires the workarounds its absence forced; delete them in the same change.
+- A new tool retires the workarounds its absence forced; delete them same-change.
 - Choose every default deliberately.
 
 ## Claims
 
 **Back claims in order of cost if wrong, each with an idempotent one-liner.**
 
-- Frame before you measure; the wrong question survives a careful answer.
-- Negative-control the harness first: a broken instrument still exits 0, and a truncated one lies.
+- Frame before you measure.
+- Negative-control the harness: a broken instrument exits 0, a truncated one lies.
 - Unverified claims say so in the same sentence.
-- Challenge my reasoning in every mode.
+- Challenge my reasoning in every mode. Subagent findings are claims, not conclusions.
 - macOS automates via sh, AppleScript, MCP, CLIs. "Not testable" is a choice.
 
 ## Where it goes
 
-- Claim → a test. Rationale → the commit. Comment → only where a reader would break something.
+- Claim → a test. Rationale → the commit, _why_ not _what_. Comment → only where a reader would break something; delete the rest.
 - Strongest mechanism that fits: a hook enforces, a skill loads on demand, prose only hopes.
-- Delete comments the code outgrew; when a test takes a comment's job, delete the comment.
 - `docs/` for specs and decisions, dated and stale by default. Nothing durable in a gitignored path.
 
 ## Subagents
 
-- For work that is independent, parallel, or needs a perspective mine won't reach.
-- Not mid-task to re-check my own work; the commit gate is separate and stands.
+- Not mid-task to re-check my own work; the pre-commit review gate is separate and stands.
 - Cheap models at low effort, never cheap at high (`docs/usage-economics.md`).
-- Their findings are claims, not conclusions.
 
 ## Writing
 
-- Fewest words that stay clear; cut what won't change what I'd do next.
+- Canadian spelling. Voice: `~/Developer/_dotfiles/writing-style.md`.
+- Cut what won't change what I'd do next.
 - Surface prior art and SOTA alongside the bounded ask, in a paragraph.
-- Voice: `~/Developer/_dotfiles/writing-style.md`.
 
 ## Environment
 
 - `sudo` and `op` use Touch ID; just run them.
+- `/deploy-check` before deploying, `/security-review` before shipping a security surface.
