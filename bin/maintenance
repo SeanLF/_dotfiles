@@ -84,6 +84,10 @@ step_snapshot() {
 step_homebrew() {
   step "Homebrew"
   try brew update
+
+  # Brew redoing a self-updating cask reinstalls what the app already moved past.
+  export HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS=1
+
   if $CHECK_ONLY; then
     brew outdated || true
     brew outdated --cask --greedy-auto-updates || true
