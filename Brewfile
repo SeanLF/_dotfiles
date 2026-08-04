@@ -27,6 +27,8 @@ brew "fzf"
 brew "gawk"
 # Distributed revision control system
 brew "git"
+# Quickly rewrite git repository history
+brew "git-filter-repo"
 # GNU implementation of the famous stream editor
 brew "gnu-sed"
 # GNU Privacy Guard (OpenPGP)
@@ -63,6 +65,8 @@ brew "pandoc"
 brew "perl"
 # PDF rendering library (based on the xpdf-3.0 code base)
 brew "poppler"
+# Convert bitmaps to vector graphics
+brew "potrace"
 # Fast command-line bittorrent client and server
 brew "rqbit"
 # Compressed read-only file system for Linux
