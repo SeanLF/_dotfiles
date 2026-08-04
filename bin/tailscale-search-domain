@@ -1,19 +1,66 @@
 #!/bin/bash
-# Add Tailscale MagicDNS search domain to macOS resolver config
-# Called at boot (launchd) and by fix-dns Raycast script
+# Keep the macOS resolver's MagicDNS search domain in sync with Tailscale's
+# actual state. Run at boot and on every Tailscale up/down transition by
+# com.tailscale.searchdomain (WatchPaths /Library/Tailscale/ipnport), and by the
+# fix-dns Raycast script.
+#
+# Symmetric by design. The earlier version only ever ADDED the search domain and
+# exited when Tailscale was down, so the State key outlived the tunnel. With
+# ServerAddresses 100.100.100.100 unreachable, every bare-name lookup expanded to
+# <name>.<suffix>, was matched by NextDNS's ts.net forwarder, and parked on the
+# dead resolver for the full 5s timeout. Past ~51 such queries/second that
+# saturates NextDNS's inflight slots and blacks out ALL DNS until restart
+# (measured: proxy/udp.go takes an inflight slot before reading the socket). So
+# when Tailscale is down we must REMOVE the key, not leave it.
 
-ts_domain=$(/usr/local/bin/tailscale status --json 2>/dev/null |
-  /usr/bin/python3 -c "import sys,json; print(json.load(sys.stdin)['CurrentTailnet']['MagicDNSSuffix'])" 2>/dev/null)
+STATE_KEY="State:/Network/Service/Tailscale/DNS"
 
-[[ -z "$ts_domain" ]] && exit 0
+# scutil exits 0 even when it refuses, and writes "Permission denied" to STDOUT,
+# so reading what it said is the only way to know the teardown happened. Failing
+# here silently is what leaves the blackout in place.
+remove_key() {
+  local out
+  out=$(
+    scutil <<SCUTIL
+open
+remove $STATE_KEY
+SCUTIL
+  )
+  case "$out" in
+    *"Permission denied"*)
+      echo "tailscale-search-domain: cannot remove $STATE_KEY (needs root); DNS may stay pointed at a stopped tunnel" >&2
+      return 1
+      ;;
+  esac
+}
 
-# Skip if already set
-scutil --dns 2>/dev/null | grep -q "$ts_domain" && exit 0
+# Read liveness and suffix together. MagicDNSSuffix alone is the WRONG signal: it
+# reflects tailnet membership, so it stays populated while BackendState is
+# "Stopped" and 100.100.100.100 is unreachable, exactly the state that starves
+# NextDNS. Only "Running" means the tunnel is up and MagicDNS is answerable.
+read -r ts_state ts_domain < <(
+  /usr/local/bin/tailscale status --json 2>/dev/null |
+    /usr/bin/python3 -c "import sys,json
+d=json.load(sys.stdin)
+print(d.get('BackendState',''), d.get('CurrentTailnet',{}).get('MagicDNSSuffix',''))" 2>/dev/null
+)
+
+# Anything but a live tunnel: tear the search domain down so resolution cannot be
+# pointed at an unreachable 100.100.100.100.
+if [[ "$ts_state" != "Running" || -z "$ts_domain" ]]; then
+  remove_key
+  exit $? # so launchd's "last exit code" distinguishes torn down from refused
+fi
+
+# Already set for the current suffix: nothing to do.
+if scutil --dns 2>/dev/null | grep -q "$ts_domain"; then
+  exit 0
+fi
 
 scutil <<SCUTIL
 d.init
 d.add ServerAddresses * 100.100.100.100
 d.add SearchDomains * $ts_domain
 d.add SupplementalMatchDomains * $ts_domain
-set State:/Network/Service/Tailscale/DNS
+set $STATE_KEY
 SCUTIL
