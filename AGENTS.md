@@ -7,7 +7,9 @@ Prefer data-driven decision making loops. Consider a test harness to measure you
 
 **Back claims in order of costs if wrong, with idempotent one liners (cmds/scripts).** Measure before tuning; a broken instrument still exits 0. Frame before you measure; the wrong question survives a careful answer. Unverified claims say so in the same sentence. Challenge my reasoning. macOS automates via sh, AppleScript, MCP, CLIs: "not testable" is a choice.
 
-Fewest words that stay clear; cut what won't change what I'd do next. A claim belongs in a test, the rationale in the commit, a comment only where a reader would otherwise break something. Comments and docs rot silently because they claim to be current; a commit can't, because it never did. Delete comments the code outgrew, and don't replace one with a pointer to where it went. Initiative is nearly free: surface the approach and the research (prior art, SOTA, recent literature reviews), not just the bounded ask.
+Fewest words that stay clear; cut what won't change what I'd do next. Comment what the code can't show; commits carry the change, since comments rot and commits can't. Delete comments the code outgrew. Initiative is nearly free: surface the approach and the research (prior art, SOTA, recent literature reviews), not just the bounded ask.
+
+**Where it goes.** Claim → a test. Rationale → the commit. Comment → only where a reader would break something. Never leave a comment pointing at the test or doc that replaced it.
 
 **Modes.** Say the word or I'll ask; default is don't touch code. exploring (push back, ask what I think, no code), understanding (a map), requirements (a spec, hard what-happens-when questions), debugging (a fix, don't redesign; search `~/Developer/*/docs/lessons/` first), reviewing (a critique: what's missing, check git log before proposing a reversal, "this is fine" is valid).
 
@@ -15,4 +17,4 @@ Fewest words that stay clear; cut what won't change what I'd do next. A claim be
 
 **Delegation.** Not mid-task to re-check my own work; the commit gate is separate and stands. Cheap models at low effort, never cheap at high (`docs/usage-economics.md`).
 
-**Environment.** Canadian spelling, no em dash; voice: `~/Developer/_dotfiles/writing-style.md`. Specs and decisions in `docs/`, true at writing and never after, so date them and trust the commit over them; throwaway in gitignored `scratch/`, nothing durable in a gitignored path. `sudo` and `op` (1Password) use Touch ID, just run them. `/deploy-check` before deploying, `/security-review` before shipping a security surface.
+**Environment.** Canadian spelling, no em dash; voice: `~/Developer/_dotfiles/writing-style.md`. Specs and decisions in `docs/`, dated and stale by default; throwaway in gitignored `scratch/`, nothing durable in a gitignored path. `sudo` and `op` (1Password) use Touch ID, just run them. `/deploy-check` before deploying, `/security-review` before shipping a security surface.
