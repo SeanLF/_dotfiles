@@ -1,19 +1,8 @@
 #!/bin/bash
-# Deny any attempt to skip git's own hooks.
+# Deny any attempt to skip git's own hooks, which is where the review gate lives.
 #
-# The review gate lives in the git pre-commit hook now, which is what makes its
-# detection exact, but it also puts it behind flags and env vars the model can
-# set. This is the one part that has to stay at the tool boundary. Upstream has
-# no fix: anthropics/claude-code#40117 landed six commits past a hook this way
-# and was closed as a duplicate.
-#
-# Everything here is a switch that turns a git hook off, which is why they are
-# all denied absolutely with no hatch. The gate prints its own hatch, and that
-# hatch survives a failed commit, so there is never a reason to reach for these.
-#
-# Deliberately narrow: "does this command carry a hook-disabling switch" is a far
-# more robust question than "is this a commit", and a miss only skips a review
-# where a false positive would wedge the session. So it fails OPEN.
+# Fails OPEN by design: a miss only skips a review, a false positive wedges the
+# session machine-wide with no hatch. Weigh every rule that way.
 set -o pipefail
 # shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/hook-lib.sh"
@@ -76,10 +65,6 @@ seg_command_is() {
 while IFS= read -r seg; do
   [ -z "$seg" ] && continue
 
-  # git's parse-options takes any unambiguous prefix. `--no-v` is NOT one of
-  # them (git: "ambiguous option: no-v (could be --no-verbose or --no-verify)"),
-  # so the shortest that means verify is --no-veri. Matching --no-v* denied the
-  # perfectly ordinary `git commit --no-verbose`.
   if seg_command_is "$seg" git && printf '%s' "$seg" | grep -qE '(^|[[:space:]])--no-veri[a-z]*([[:space:]]|$)'; then
     deny "--no-verify skips the git hooks, which is where the review gate, lefthook and check-commit-msg all live. ${HATCH}"
   fi

@@ -24,12 +24,19 @@ lint:
       | while IFS= read -r -d '' f; do [ -L "$f" ] || printf '%s\0' "$f"; done \
       | xargs -0 mise x -- prettier --check
 
+# Run the test suites. Free and offline; tests/probe-*.sh are opt-in and cost
+# tokens, so they are deliberately not here.
+test:
+    bash tests/test-review-gate.sh
+    bash tests/test-tailscale-dns.sh
+    python3 .claude/hooks/test-hooks.py
+
 # Audit the machine for drift without making changes
 dry-run:
     ./setup.sh --dry-run
 
 # Full pre-push gate: lint everything + verify setup.sh still parses and runs
-check: lint dry-run
+check: lint test dry-run
 
 # Auto-fix everything that has an auto-fixer. Leaves the repo lint-clean.
 fmt:

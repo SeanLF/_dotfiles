@@ -1,25 +1,15 @@
 #!/bin/bash
-# Global post-commit. Exists to clear the review gate's escape hatch.
-#
-# The hatch is consumed HERE rather than in pre-commit because commit-msg runs in
-# between: consuming it earlier meant a message check-commit-msg rejected took
-# the hatch with it, leaving no way through. Clearing it only once a commit has
-# actually landed keeps the hatch one-shot without making a failed commit cost
-# anything.
-#
-# core.hooksPath replaces the whole hooks directory, so this also has to hand off
-# to lefthook or a repo relying on it loses its post-commit steps. Same per-repo
-# opt-in as the other hooks; see pre-commit for why that boundary matters.
+# Global post-commit: clears the review gate's escape hatch, and hands off to
+# lefthook. See pre-commit for the lefthook trust boundary.
 set -euo pipefail
 
-# Not named GIT_DIR: git exports that into hooks inside a linked worktree, and
-# assigning it repoints every later git call, including lefthook's.
+# Do not rename to GIT_DIR: git exports that into hooks inside a linked worktree,
+# and assigning it repoints every later git call, including lefthook's.
 COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null) || COMMON_DIR=""
 [ -n "$COMMON_DIR" ] && rm -f "$COMMON_DIR/claude-review-force"
 
-# Only shell out when there is actually a post-commit section. No repo here has
-# one today, and an unconditional handoff prints a lefthook banner on every
-# commit on this machine for zero work.
+# Do not make this handoff unconditional: it prints a lefthook banner on every
+# commit machine-wide, and no repo here has a post-commit section.
 if [ -f lefthook.yml ] &&
   grep -q '^post-commit:' lefthook.yml &&
   [ "$(git config --local --bool hooks.lefthook 2>/dev/null || echo false)" = "true" ] &&

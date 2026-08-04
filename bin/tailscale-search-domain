@@ -15,9 +15,6 @@
 
 STATE_KEY="State:/Network/Service/Tailscale/DNS"
 
-# scutil exits 0 even when it refuses, and writes "Permission denied" to STDOUT,
-# so reading what it said is the only way to know the teardown happened. Failing
-# here silently is what leaves the blackout in place.
 remove_key() {
   local out
   out=$(
@@ -34,10 +31,6 @@ SCUTIL
   esac
 }
 
-# Read liveness and suffix together. MagicDNSSuffix alone is the WRONG signal: it
-# reflects tailnet membership, so it stays populated while BackendState is
-# "Stopped" and 100.100.100.100 is unreachable, exactly the state that starves
-# NextDNS. Only "Running" means the tunnel is up and MagicDNS is answerable.
 read -r ts_state ts_domain < <(
   /usr/local/bin/tailscale status --json 2>/dev/null |
     /usr/bin/python3 -c "import sys,json

@@ -340,6 +340,58 @@ roster_cases() {
   rm -rf "$repo"
 }
 
+# Mechanism claims that were previously only asserted in comments. Each one is a
+# fact about git or the shell that the gate depends on; if it stops being true the
+# gate breaks in a way the flow tests would not localize.
+mechanism_cases() {
+  echo "=== mechanism ==="
+  local repo h_w h_s
+  repo=$(mktemp -d)
+  git init -q "$repo"
+  (
+    cd "$repo" || exit 1
+    git config user.email t@t
+    git config user.name t
+    git config diff.mnemonicPrefix true # what this machine sets
+    echo one >f.txt
+    git add -A
+    env -u CLAUDECODE git commit -qm "chore: base"
+    echo two >>f.txt
+    git add -A
+  )
+  # Without --no-prefix, mnemonicPrefix labels the two diffs w/ and i/, so
+  # identical content hashes differently and the worktree branch is dead code.
+  h_w=$(cd "$repo" && git diff HEAD | shasum -a 256 | cut -c1-16)
+  h_s=$(cd "$repo" && git diff --cached HEAD | shasum -a 256 | cut -c1-16)
+  check "mnemonicPrefix DOES split the hashes (why --no-prefix is needed)" \
+    "$([ "$h_w" != "$h_s" ] && echo split || echo same)" split
+  h_w=$(cd "$repo" && git diff --no-prefix HEAD | shasum -a 256 | cut -c1-16)
+  h_s=$(cd "$repo" && git diff --no-prefix --cached HEAD | shasum -a 256 | cut -c1-16)
+  check "--no-prefix makes them equal for identical content" "$h_w" "$h_s"
+  # And that the gate's own helper inherits the fix.
+  check "review-gate --hash agrees with itself across staging" \
+    "$(cd "$repo" && "$ROOT/bin/review-gate" --hash | sed -n 's/^worktree=//p')" \
+    "$(cd "$repo" && "$ROOT/bin/review-gate" --hash | sed -n 's/^staged=//p')"
+  rm -rf "$repo"
+
+  # Why the flag pattern is --no-veri and not --no-v: git rejects --no-v as
+  # ambiguous, and --no-verbose is a real flag that must not be denied.
+  #
+  # In a scratch repo with an empty index, never the caller's. `git commit
+  # --no-verbose -m x` parses fine, so in a repo with anything staged this
+  # assertion would COMMIT it.
+  local probe out
+  probe=$(mktemp -d)
+  git init -q "$probe"
+  out=$(cd "$probe" && git commit --no-v -m x 2>&1)
+  check "git rejects --no-v as ambiguous (so the pattern must be --no-veri)" \
+    "$(case "$out" in *ambiguous*) echo yes ;; *) echo no ;; esac)" yes
+  out=$(cd "$probe" && git commit --no-verbose -m x 2>&1)
+  check "--no-verbose parses, so denying --no-v* was a false positive" \
+    "$(case "$out" in *ambiguous* | *"unknown option"*) echo rejected ;; *) echo parsed ;; esac)" parsed
+  rm -rf "$probe"
+}
+
 # Wiring, not behaviour, and the harness cannot reach it any other way: an
 # artifact written from PostToolUse(Task) is written at SPAWN for a backgrounded
 # agent, so the gate would clear before the reviewer read anything and every case
@@ -377,10 +429,15 @@ bypass_cases
 BYPASS_PASS=$PASS BYPASS_FAIL=$FAIL
 PASS=0 FAIL=0
 roster_cases
+ROSTER_PASS=$PASS ROSTER_FAIL=$FAIL
+PASS=0 FAIL=0
+echo
+mechanism_cases
 
 printf '\n%s\n' "----------------------------------------"
 printf 'negative control: %d assertions failed, so absence is detectable\n' "$CONTROL_FAIL"
 printf 'gate installed:   %d passed, %d failed\n' "$GATE_PASS" "$GATE_FAIL"
 printf 'bypass guard:     %d passed, %d failed\n' "$BYPASS_PASS" "$BYPASS_FAIL"
-printf 'reviewer roster:  %d passed, %d failed\n' "$PASS" "$FAIL"
-[ "$GATE_FAIL" -eq 0 ] && [ "$BYPASS_FAIL" -eq 0 ] && [ "$FAIL" -eq 0 ]
+printf 'reviewer roster:  %d passed, %d failed\n' "$ROSTER_PASS" "$ROSTER_FAIL"
+printf 'mechanism:        %d passed, %d failed\n' "$PASS" "$FAIL"
+[ "$GATE_FAIL" -eq 0 ] && [ "$BYPASS_FAIL" -eq 0 ] && [ "$ROSTER_FAIL" -eq 0 ] && [ "$FAIL" -eq 0 ]

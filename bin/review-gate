@@ -1,37 +1,20 @@
 #!/bin/bash
 # Refuse a Claude-made commit whose content has not been through a reviewer agent.
+# Called from the global pre-commit hook, after lefthook.
 #
-# Called from the global pre-commit hook, AFTER lefthook, so the content it hashes
-# is the content that will actually land. The PreToolUse version of this gate ran
-# before its own tool call, which is before git, which is before lefthook: it
-# certified the pre-formatter tree and then lost its marker whenever a formatter
-# rewrote a file and aborted the commit.
-#
-# The gate is a content hash, not a one-shot marker. A review is valid exactly as
-# long as the tree it reviewed is the tree being committed, so a failed commit
-# costs nothing and there is no marker to re-arm.
-#
-# This is a speed bump for an honest agent, not a boundary. It is keyed on
-# CLAUDECODE, which the model can unset; hook-bypass-guard.sh denies the known
-# forms of that at the tool boundary, but the PreToolUse gate this replaces was
-# the only version the model could not talk its way around. That is the price of
-# exact detection, paid deliberately.
+# A speed bump for an honest agent, not a boundary: it keys on CLAUDECODE, which
+# the model can unset.
 #
 #   review-gate            gate a commit (exit 1 to refuse)
 #   review-gate --hash     print both content hashes, for bin/record-review
 set -uo pipefail
 
-# NEVER name a variable GIT_DIR here. Inside a linked worktree git exports
-# GIT_DIR into its hooks, so assigning that name silently repoints every later
-# git call at whatever you put in it, including the diff below. That made a
-# reviewed worktree commit impossible to clear by reviewing: the gate hashed one
-# worktree and record-review hashed another, and the mismatch message blamed a
-# formatter and told you to re-review, which could never work.
+# NEVER name a variable GIT_DIR here. Inside a linked worktree git exports it into
+# hooks, so assigning that name repoints every later git call, including the diff
+# below, and no review can then clear a worktree commit.
 
-# Before the first commit there is no HEAD, and `git diff HEAD` fatals while
-# still yielding the digest of empty input, so every tree in a fresh repo hashes
-# alike and any review certifies any initial commit. Diff against the empty tree
-# instead; git knows that OID even in an empty object store.
+# No HEAD before the first commit, and `git diff HEAD` fatals while still yielding
+# the digest of empty input, so every fresh-repo tree would hash alike.
 diff_base() {
   git rev-parse -q --verify HEAD 2>/dev/null ||
     git hash-object -t tree /dev/null
@@ -48,13 +31,6 @@ digest() { shasum -a 256 | cut -c1-16; }
 # before anything is staged. The gate passes if what lands matches EITHER, which
 # keeps a pre-staging review valid through `git add` without letting staged
 # content the reviewer never saw through.
-#
-# --no-prefix is load-bearing, not cosmetic. This machine sets
-# diff.mnemonicPrefix, which labels the diff by comparison type: `git diff`
-# emits `w/` for the worktree and `--cached` emits `i/` for the index. Identical
-# content therefore hashed differently on the two sides, so the worktree branch
-# was dead code and every review taken before `git add` demanded a second one.
-# --no-prefix also immunizes both against diff.noprefix and diff.srcPrefix.
 worktree_hash() { git diff --no-prefix "$(diff_base)" 2>/dev/null | digest; }
 staged_hash() { git diff --no-prefix --cached "$(diff_base)" 2>/dev/null | digest; }
 
