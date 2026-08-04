@@ -13,11 +13,28 @@
 # including hostile clones, from a single accidental setting.
 set -euo pipefail
 
-[ -f lefthook.yml ] || exit 0
-if [ "$(git config --local --bool hooks.lefthook 2>/dev/null || echo false)" != "true" ]; then
-  echo "pre-commit: lefthook.yml present but this repo is not trusted to run it." >&2
-  echo "  if you trust it: git config --local hooks.lefthook true" >&2
-  exit 0
+# lefthook runs first and is no longer exec'd. The review gate below has to see
+# the tree after formatters, or it certifies code that never lands.
+if [ -f lefthook.yml ]; then
+  if [ "$(git config --local --bool hooks.lefthook 2>/dev/null || echo false)" != "true" ]; then
+    echo "pre-commit: lefthook.yml present but this repo is not trusted to run it." >&2
+    echo "  if you trust it: git config --local hooks.lefthook true" >&2
+  elif command -v lefthook >/dev/null 2>&1; then
+    lefthook run --no-auto-install pre-commit "$@"
+  fi
 fi
-command -v lefthook >/dev/null 2>&1 || exit 0
-exec lefthook run --no-auto-install pre-commit "$@"
+
+# Fixed path in _dotfiles, so it is trusted whichever repo we are standing in,
+# same as check-commit-msg. Inert unless CLAUDECODE=1.
+#
+# An `if`, not `[ -x ] && "$GATE"`: as the last line of a `set -e` script the &&
+# form exits 1 whenever the gate is absent, blocking every commit on a machine
+# that has not installed it yet.
+GATE="${REVIEW_GATE_BIN:-$HOME/Developer/_dotfiles/bin/review-gate}"
+if [ -x "$GATE" ]; then
+  "$GATE"
+elif [ -e "$GATE" ]; then
+  # Present but not executable is not a fresh machine, it is a gate that has
+  # been switched off. Absent is silent; this is not.
+  echo "pre-commit: $GATE exists but is not executable, so the review gate is not running." >&2
+fi

@@ -59,16 +59,17 @@
         ]
       }
     ],
-    "PostToolUse": [
+    "SubagentStop": [
       {
-        "matcher": "Task",
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/post-review-sentinel.sh"
+            "command": "~/Developer/_dotfiles/bin/record-review"
           }
         ]
-      },
+      }
+    ],
+    "PostToolUse": [
       {
         "hooks": [
           {
@@ -92,11 +93,12 @@
           },
           {
             "type": "command",
-            "command": "~/.claude/hooks/commit-guard.sh"
+            "command": "~/.claude/hooks/commit-guard.sh",
+            "if": "Bash(git *)"
           },
           {
             "type": "command",
-            "command": "~/.claude/hooks/pre-commit-review.sh"
+            "command": "~/.claude/hooks/hook-bypass-guard.sh"
           },
           {
             "type": "command",
@@ -136,7 +138,6 @@
   "theme": "auto",
   "verbose": true,
   "preferredNotifChannel": "ghostty",
-  "remoteControlAtStartup": false,
   "inputNeededNotifEnabled": false,
   "agentPushNotifEnabled": true,
   "skipAutoPermissionPrompt": true,

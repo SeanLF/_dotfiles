@@ -3,7 +3,8 @@ import pathlib
 import subprocess
 
 H = pathlib.Path.home() / ".claude/hooks"
-S, C, P = H / "search-tool-guard.sh", H / "commit-guard.sh", H / "pre-commit-review.sh"
+S, C = H / "search-tool-guard.sh", H / "commit-guard.sh"
+B = H / "hook-bypass-guard.sh"
 
 FORCE = "/tmp/claude-commit-force-tst"
 pathlib.Path(FORCE).unlink(missing_ok=True)
@@ -37,17 +38,15 @@ CASES = [
     (S, "rtk init -g --gemini", "deny", "rtk clobber guarded"),
     (S, "rtk init", "allow", "project-local rtk init fine"),
     (S, "rtk gain", "allow", "other rtk subcommands fine"),
-    (C, "echo \"don't\" && git commit -m 'bad message'", "deny", "apostrophe no longer blinds commit guard"),
-    (C, "git -C /tmp commit -m 'nope'", "deny", "git -C bypass closed"),
-    (C, "git -c user.name=x commit -m 'nope'", "deny", "git -c bypass closed"),
-    (C, 'git commit -m "feat(x): why" -m "body prose"', "allow", "subject+body allowed"),
-    (C, 'git commit -am "fix(y): why"', "allow", "-am good"),
-    (C, 'git commit -am "nope"', "deny", "-am bad still caught"),
-    (C, 'git commit -m "fixup! feat(x): y"', "allow", "autosquash allowed"),
-    (C, 'git commit -m "updated the thing"', "deny", "non-conventional denied"),
-    (C, 'python3 - <<PY\nbody\nPY\ngit commit -m "not conventional"', "deny", "command after heredoc still guarded"),
+    # Message shape moved to bin/check-commit-msg (global commit-msg hook), so
+    # commit-guard now only judges what git cannot: amend, and staged scratch.
+    (C, "echo \"don't\" && git commit --amend -m 'fix: x'", "deny", "apostrophe no longer blinds commit guard"),
+    (C, "git -C /tmp commit --amend -m 'fix: x'", "deny", "git -C bypass closed"),
+    (C, "git -c user.name=x commit --amend -m 'fix: x'", "deny", "git -c bypass closed"),
+    (C, 'git commit -m "feat(x): why" -m "body prose"', "allow", "ordinary commit untouched"),
+    (C, 'git commit -am "fix(y): why"', "allow", "-am untouched"),
+    (B, 'python3 - <<PY\nbody\nPY\ngit commit --no-verify -m "x"', "deny", "command after heredoc still guarded"),
     (S, 'cat <<EOF\nnever run rg -rn foo\nEOF', "allow", "heredoc mention not denied"),
-    (C, 'git commit -m "feat(x): sparkle ✨"', "deny", "emoji denied"),
     # In-place edit idioms: a no-match rewrites nothing and still exits 0, so a
     # failed edit is indistinguishable from an applied one. 305 real uses across
     # 228k historical commands, so this warns rather than denies.
@@ -75,9 +74,13 @@ CASES = [
     # Guarding the idiom would be 94% false positives, so it is not guarded.
     (S, "python3 -c 'print(s.replace(1,2))'", "allow", "read-only python replace untouched"),
     (S, "rg -rn foo && sed -i '' 's/a/b/' f", "deny", "deny still beats the new warn"),
-    (P, "git log --grep commit -5", "allow", "read-only git log must not trip gate"),
-    (P, "echo 'later: git commit -m x'", "allow", "quoted mention must not trip gate"),
-    (P, "git commit -m 'feat(x): y'", "deny", "real commit still gated"),
+    (B, "git log --grep commit -5", "allow", "read-only git log must not trip guard"),
+    (B, "echo 'later: git commit --no-verify'", "allow", "quoted mention must not trip guard"),
+    (B, "git commit -m 'feat(x): y'", "allow", "an ordinary commit is not a bypass"),
+    (B, "git config --get core.hooksPath", "allow", "reading hooksPath is not disabling it"),
+    (B, "git config --local core.hooksPath .githooks", "deny", "writing hooksPath is"),
+    (B, "CLAUDECODE=1 git commit -m 'feat(x): y'", "allow", "setting the value it already has"),
+    (B, "CLAUDECODE=0 git commit -m 'feat(x): y'", "deny", "turning the gate off"),
 ]
 
 fails = 0
@@ -125,56 +128,8 @@ print(f"commit-guard with marker -> {a} (want allow); marker survived: {still} (
 fails += a != "allow" or not still
 pathlib.Path(FORCE).unlink(missing_ok=True)
 
-print()
-print("=== sentinel: every name the deny message gives must clear the gate ===")
-SENT = H / "post-review-sentinel.sh"
-SENT_MARK = pathlib.Path("/tmp/claude-review-done-senttest")
-
-
-def fires(agent):
-    SENT_MARK.unlink(missing_ok=True)
-    subprocess.run(
-        [str(SENT)],
-        input=json.dumps({"session_id": "senttest", "tool_input": {"subagent_type": agent}}),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    hit = SENT_MARK.exists()
-    SENT_MARK.unlink(missing_ok=True)
-    return hit
-
-
-# Must clear: exactly the names pre-commit-review.sh tells you to run.
-# Must not: a name that does not exist, and an unrelated agent.
-SENTINEL_CASES = [
-    ("pr-review-toolkit:code-reviewer", True),
-    ("pr-review-toolkit:code-simplifier", True),
-    ("pr-review-toolkit:silent-failure-hunter", True),
-    ("code-simplifier:code-simplifier", True),
-    ("feature-dev:code-reviewer", True),
-    ("adversarial-reviewer", True),
-    ("superpowers:code-reviewer", False),
-    ("general-purpose", False),
-]
-for agent, want in SENTINEL_CASES:
-    got = fires(agent)
-    ok = got == want
-    fails += not ok
-    print(f"{'ok  ' if ok else 'FAIL'} {agent:<44} clears={got} (want {want})")
-
-# The deny message must not name anything that cannot clear the gate.
-named = [
-    ln.strip()
-    for ln in (H / "pre-commit-review.sh").read_text().splitlines()
-    if ln.strip().count(":") == 1 and ln.strip().split(":")[0] in
-    {"pr-review-toolkit", "code-simplifier", "feature-dev", "superpowers"}
-]
-for n in named:
-    agent = n.split()[0]
-    if not fires(agent):
-        print(f"FAIL deny message names {agent}, which does not clear the gate")
-        fails += 1
+# The agent-name roster and the review gate's deny message are covered by
+# tests/test-review-gate.sh, which has a real git repo to record against.
 
 print()
 print("FAILURES:", fails)

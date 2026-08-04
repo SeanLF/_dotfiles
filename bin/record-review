@@ -1,0 +1,66 @@
+#!/bin/bash
+# Record that a reviewer agent has seen the current tree, for bin/review-gate.
+#
+# Wired to SubagentStop, NOT PostToolUse(Task). The Agent tool backgrounds
+# subagents by default, and for a backgrounded call the tool result is the launch
+# confirmation, so PostToolUse fires at spawn. Measured: a reviewer that ran for
+# 21s wrote its record 5s in, before it had read a single file. A gate cleared at
+# spawn enforces nothing, and it would have reported green the whole time.
+#
+# SubagentStop also fires when a subagent is interrupted, so a cancelled review
+# still clears the gate. That is the lesser hole and it is the honest one: it
+# needs someone to hit escape, where the other fired on every single review.
+#
+# This records that a reviewer RAN, not that it approved. The gate is a "did you
+# look" interlock, not a verdict: a reviewer that finds problems still clears it,
+# because the findings are for me to act on, not for a shell script to parse.
+#
+# The record lives in $GIT_DIR, not a session-keyed path under /tmp: the repo is
+# what gets reviewed, and a subagent's session id is not guaranteed to match its
+# parent's, which would leave the git hook looking for a file that is not there.
+set -uo pipefail
+
+command -v jq >/dev/null 2>&1 || exit 0
+
+INPUT=$(cat)
+AGENT=$(printf '%s' "$INPUT" | jq -r '.tool_input.subagent_type // .agent_type // empty' 2>/dev/null)
+EVENT=$(printf '%s' "$INPUT" | jq -r '.hook_event_name // "?"' 2>/dev/null)
+CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)
+
+case "$AGENT" in
+  feature-dev:code-reviewer | \
+    pr-review-toolkit:code-reviewer | \
+    pr-review-toolkit:code-simplifier | \
+    pr-review-toolkit:silent-failure-hunter | \
+    code-simplifier:code-simplifier | \
+    adversarial-reviewer) ;;
+  *) exit 0 ;;
+esac
+
+if [ -n "$CWD" ] && ! cd "$CWD" 2>/dev/null; then
+  exit 0
+fi
+
+# Must match how review-gate resolves it, or a worktree review is unfindable.
+# Not named GIT_DIR: git exports that into hooks inside a linked worktree, and
+# assigning it repoints every later git call. See the note in review-gate.
+COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null) || exit 0
+
+# Two hashes: what the reviewer read in the worktree, and what was staged at the
+# time. The gate accepts either, so a review taken before `git add` stays valid.
+HASHES=$("$(dirname "$0")/review-gate" --hash) || exit 0
+
+# A reviewer very often finishes just after a commit lands, when the tree is
+# clean. Recording the empty digest would certify nothing. Nothing to review,
+# nothing to record; leaving the previous record alone is also correct, since it
+# still describes the last content anyone actually looked at.
+EMPTY=$(printf '' | shasum -a 256 | cut -c1-16)
+if [ "$HASHES" = "worktree=${EMPTY}
+staged=${EMPTY}" ]; then
+  exit 0
+fi
+
+if ! printf '%s\nagent=%s\nevent=%s\n' "$HASHES" "$AGENT" "$EVENT" \
+  >"$COMMON_DIR/claude-review" 2>/dev/null; then
+  echo "record-review: cannot write $COMMON_DIR/claude-review; the commit will be gated" >&2
+fi

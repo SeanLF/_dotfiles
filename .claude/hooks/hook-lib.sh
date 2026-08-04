@@ -48,33 +48,14 @@ strip_quotes() {
   '
 }
 
-# Drop heredoc bodies but KEEP quotes. Detection wants quotes gone; message
-# extraction needs them intact, since the quotes delimit the message itself.
-strip_heredocs() {
-  awk '
-    {
-      line = $0
-      if (skip) {
-        t = line; gsub(/^[ \t]+|[ \t]+$/, "", t)
-        if (t == marker) skip = 0
-        next
-      }
-      if (match(line, /<<-?[ \t]*[A-Za-z_"\x27][A-Za-z0-9_]*/)) {
-        m = substr(line, RSTART, RLENGTH)
-        sub(/^<<-?[ \t]*/, "", m)
-        gsub(/["\x27]/, "", m)
-        marker = m; skip = 1
-        line = substr(line, 1, RSTART - 1)
-      }
-      printf "%s\n", line
-    }
-  '
-}
-
 # A `git commit` invocation, as opposed to a mention of one or a different git
 # subcommand that happens to contain the word. Only dash-options and the
 # argument of -C/-c/--git-dir/--work-tree may sit between `git` and `commit`,
 # so `git log --grep commit` does not match while `git -C /path commit` does.
+#
+# `git` may carry a leading path, VAR=val assignments, or a sudo/command
+# wrapper. Without those, `/usr/bin/git commit -nm x` and `CLAUDECODE=1 git
+# commit -nm x` read as "not a commit", which is exactly backwards for a guard.
 is_git_commit() {
-  printf '%s' "$1" | grep -qE '(^|[;&|][[:space:]]*)[[:space:]]*git([[:space:]]+(-[cC][[:space:]]+[^[:space:]]+|--(git-dir|work-tree|namespace|exec-path)([= ])[^[:space:]]+|-[^[:space:]]+))*[[:space:]]+commit([[:space:]]|$)'
+  printf '%s' "$1" | grep -qE '(^|[;&|][[:space:]]*)[[:space:]]*[({]*[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*((sudo|command|nohup|time)[[:space:]]+)*([^[:space:]]*/)?git([[:space:]]+(-[cC][[:space:]]+[^[:space:]]+|--(git-dir|work-tree|namespace|exec-path)([= ])[^[:space:]]+|-[^[:space:]]+))*[[:space:]]+commit([[:space:]]|$)'
 }
