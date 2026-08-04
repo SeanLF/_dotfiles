@@ -1,3 +1,8 @@
+---
+name: deploy-check
+description: Use before deploying or releasing anything, and whenever the user says deploy, ship, release, cut a release, or push to prod. Walks migration safety, deploy-target completeness, dependency changes, deploy mechanism and rollback plan, reporting each and proceeding only if all pass.
+---
+
 # Pre-Deploy Safety Check
 
 Run this checklist before deploying. Report findings for each item and only proceed if all checks pass.

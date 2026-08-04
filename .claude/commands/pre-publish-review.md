@@ -1,3 +1,8 @@
+---
+name: pre-publish-review
+description: Use before publishing writing that goes out under Sean's name: a post, newsletter, README, or public page. Runs an editorial review chain over the draft and reports what to change before it ships.
+---
+
 # Pre-Publish Editorial Review
 
 ## Setup

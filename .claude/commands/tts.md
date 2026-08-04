@@ -1,3 +1,8 @@
+---
+name: tts
+description: Use when asked to read something aloud, speak, narrate, or turn text into audio on this Mac. Generates speech locally with Kokoro via MLX, no network round trip.
+---
+
 # Text-to-Speech with Kokoro MLX
 
 Generate high-quality speech audio from text using Kokoro TTS on Apple Silicon.
