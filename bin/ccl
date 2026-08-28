@@ -1,22 +1,25 @@
 #!/bin/bash
 # Claude Code on a local llama.cpp model (no rate limit, fully offline)
 #
-# Usage: ccl [-m MODEL] [-r] [-h] [claude args...]
-#   -m, --model     glm (default) | <user/repo[:quant]> | /path/to.gguf
-#   -r, --restart   Restart llama-server first (use after changing flags)
+# Usage: ccl [-m MODEL] [--restart] [--pull] [-y] [-h] [claude args...]
+#   -m, --model     qwen (default) | gemma | <user/repo[:quant]> | <path>
+#       --restart   Restart llama-server first (use after changing flags)
+#       --pull      Allow downloading the model if it is not cached
+#   -y, --yolo      Pass --dangerously-skip-permissions to Claude Code
 #   -h, --help      Show this help message
 #
 # Runs Claude Code CLI against llama-server's native Anthropic endpoint
 # (/v1/messages), no proxy needed. llama-server serves one model and ignores
 # the requested model name, so subagents asking for claude-opus-4-8 land on the
-# loaded model without the alias table `ccnim` needs. HF repos are pulled on
-# first use and cached under ~/.cache/huggingface. For the free hosted tier use
+# loaded model without the alias table `ccnim` needs. HF repos are cached under
+# ~/.cache/huggingface but are NOT fetched on a cache miss unless you pass
+# --pull, so a typo cannot start a 20 GB download. For the free hosted tier use
 # `ccnim` (NIM via Olla).
 
 set -e
 
 show_help() {
-  sed -n '2,15s/^# \{0,1\}//p' "$0"
+  sed -n '2,17s/^# \{0,1\}//p' "$0"
   exit 0
 }
 
@@ -24,32 +27,66 @@ url="http://127.0.0.1:40115"
 # Not /tmp/llama-server.log: Llama.app's `llama serve` already writes there,
 # and the startup-failure handler below tails this file.
 log=/tmp/ccl-llama-server.log
-# 128K, not the 64K inherited from OLLAMA_CONTEXT_LENGTH: GLM-4.7-Flash is MLA
-# (deepseek2 arch), so its KV cache is cheap. Measured on this M4 Pro, doubling
-# 64K -> 128K cost 3.4 GiB (23.6 -> 27.0 GiB RSS), against a ~37 GiB Metal
-# working-set ceiling. Lower it if a future model has a fatter KV cache.
+# 128K, not the 64K inherited from OLLAMA_CONTEXT_LENGTH. Measured on this M4
+# Pro against the Qwen3.6-35B-A3B default: 23.6 GiB RSS at 128K, of which 21.3
+# is weights, so the whole KV cache is ~2.3 GiB. That leaves ~15 GiB under the
+# Metal working-set ceiling, which reports as 40200 MB.
+#
+# KV is that cheap because qwen35moe is hybrid-attention (the GGUF carries
+# ssm.* keys and a full_attention_interval): most layers keep a constant-size
+# recurrent state instead of a per-token KV, so the cache barely grows with
+# context. Published guidance that extrapolates KV linearly from a short
+# context badly overestimates this model -- doing so predicted ~12 GiB of KV
+# against the 2.3 GiB actually measured. Re-measure rather than extrapolate if
+# the default model changes; a conventional-GQA model of this size would not
+# fit at 128K.
 ctx="${LLAMA_CONTEXT_LENGTH:-131072}"
 
 restart=false
-model="glm"
+yolo=false
+pull=false
+model="qwen"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -m | --model)
       [[ -n "${2:-}" ]] || {
-        echo "ccl: -m requires a model (glm | <repo> | <path>)" >&2
+        echo "ccl: -m requires a model (qwen | gemma | <repo> | <path>)" >&2
         exit 1
       }
       model="$2"
       shift 2
       ;;
-    -r | --restart)
+    # Long-only, both of these, because claude owns the short forms: -r is its
+    # --resume and -p its --print. Swallowing -r was the worse of the two, since
+    # it pkilled the server and then handed the session id on to claude as a
+    # bare positional prompt, so asking to resume a session silently restarted
+    # the server and began a new one. Swallowing -p turned a piped run into an
+    # interactive TUI that hangs waiting on a tty.
+    --restart)
       restart=true
+      shift
+      ;;
+    --pull)
+      pull=true
+      shift
+      ;;
+    -y | --yolo)
+      yolo=true
       shift
       ;;
     -h | --help) show_help ;;
     *) break ;;
   esac
 done
+
+# Validated before anything is started or downloaded. $ctx reaches both
+# llama-server's -c and, unquoted, would reach claude's argv; a non-numeric
+# value there is an argument-injection point, and a wrong one is only caught
+# after a multi-GB model load.
+[[ "$ctx" =~ ^[1-9][0-9]*$ ]] || {
+  echo "ccl: LLAMA_CONTEXT_LENGTH must be a positive integer, got '$ctx'" >&2
+  exit 1
+}
 
 # Short names map to specific quants so `ccl` is reproducible; anything else is
 # passed through as either a local .gguf path or a Hugging Face repo id. $label
@@ -63,7 +100,20 @@ label="$model"
 # branch body does the expansion itself.
 # shellcheck disable=SC2088
 case "$model" in
-  glm) source="-hf unsloth/GLM-4.7-Flash-GGUF:UD-Q5_K_XL" ;;
+  # 35B total but only 3B active, which is what buys the throughput -- a dense
+  # model of similar quality costs ~4x the latency (Qwen3.8-27B measured 12.0
+  # tok/s against GLM-4.7-Flash's 49.1 on this M4 Pro). Replaced GLM-4.7-Flash,
+  # which had the same 3B-active shape but 59.2 SWE-bench Verified to this
+  # model's 73.4. Do not reach for a "Flash" model to beat it: DeepSeek-V4-Flash
+  # and GLM-5.3-Flash are 284B and 320B total, whose smallest quants (71 GB,
+  # 92 GB) are ~2x this machine's 40200 MB Metal working-set ceiling.
+  # The -MTP- repo carries the model's multi-token-prediction heads, but do not
+  # bother with --spec-type draft-mtp: measured on a sibling A3B model it cost
+  # 12.7% throughput at 73% draft acceptance, and an independent 19-config
+  # benchmark found no net speedup for A3B MoE on CUDA either. Generation is
+  # already cheap at 3B active, so the draft overhead never pays for itself.
+  qwen) source="-hf unsloth/Qwen3.6-35B-A3B-MTP-GGUF:UD-Q4_K_XL" ;;
+  gemma) source="-hf unsloth/gemma-4-26B-A4B-it-qat-GGUF:UD-Q4_K_XL" ;;
   /* | ./* | "~/"*)
     path="${model/#\~/$HOME}"
     [[ -f "$path" ]] || {
@@ -75,15 +125,24 @@ case "$model" in
     ;;
   */*) source="-hf $model" ;;
   *)
-    echo "ccl: unknown model '$model' (use glm | <user/repo> | <path>)" >&2
+    echo "ccl: unknown model '$model' (use qwen | gemma | <user/repo> | <path>)" >&2
     exit 1
     ;;
 esac
 
-command -v llama-server >/dev/null || {
-  echo "ccl: 'llama-server' not found on PATH (brew install llama.cpp)" >&2
-  exit 1
-}
+# jq is guarded alongside llama-server because loaded() parses /v1/models with
+# it inside an `if` condition, where set -e is suppressed. A missing jq would
+# make $(loaded) empty, never equal to $label, and silently restart the server
+# on every single invocation.
+# The formula name is not always the binary name: llama-server ships in the
+# llama.cpp formula, so interpolating $tool into the hint would send someone
+# with nothing installed to `brew install llama-server`, which does not exist.
+for tool in llama-server:llama.cpp jq:jq; do
+  command -v "${tool%%:*}" >/dev/null || {
+    echo "ccl: '${tool%%:*}' not found on PATH (brew install ${tool##*:})" >&2
+    exit 1
+  }
+done
 
 server_up() { curl -sf -o /dev/null --max-time 2 "$url/health" 2>/dev/null; }
 
@@ -106,17 +165,52 @@ if $restart && server_up; then
     sleep 0.5
     n=$((n + 1))
   done
+  # Refuse rather than warn. Warning and continuing meant ANTHROPIC_MODEL said
+  # one thing while a different model answered, at exit 0, with the warning
+  # scrolled away by the TUI's first repaint. Reachable whenever the process on
+  # the port is not one pkill's pattern matches: Llama.app's `llama serve`,
+  # a --port=40115 spelling, or anything else holding the port. loaded() is
+  # already the authority on which model is up, so ask it rather than guess.
   if server_up; then
-    echo "ccl: warning: llama-server still on :40115; it may serve the old model" >&2
+    # `|| true` for the same reason as the /props reads below: loaded() ends in
+    # jq, which exits 5 on a non-JSON body, and a bare assignment from a failing
+    # substitution aborts under set -e -- silently, in the one block whose whole
+    # point is to be loud. jq exits 0 on empty input, so a dead server still
+    # yields "" and falls through to the message.
+    still="$(loaded || true)"
+    if [[ "$still" == "$label" ]]; then
+      # Right model, wrong lifecycle: pkill's pattern missed it. Harmless for a
+      # model switch, but --restart is documented as the way to apply changed
+      # flags, and those have NOT been applied, so do not pass silently.
+      echo "ccl: llama-server on :40115 did not stop; it already serves $label," >&2
+      echo "     so continuing without a restart. Flag changes have not applied." >&2
+    else
+      echo "ccl: llama-server on :40115 did not stop; it serves '${still:-unknown}', not $label." >&2
+      echo "     Stop it before rerunning: pkill -f 'llama-server .* 40115'" >&2
+      exit 1
+    fi
   fi
 fi
 
 if ! server_up; then
+  # A -hf source silently fetches multi-GB weights on a cache miss, so without
+  # this the default `ccl` on a cold cache starts a 20 GB download nobody asked
+  # for. --offline is llama.cpp's own switch for that ("forces use of cache,
+  # prevents network access"), and it is the right tool rather than a cache
+  # check of our own: it resolves the five env vars that can relocate the cache
+  # (LLAMA_CACHE, HF_HUB_CACHE, HUGGINGFACE_HUB_CACHE, HF_HOME,
+  # XDG_CACHE_HOME), it treats quant tags case-insensitively the way -hf does,
+  # and it knows what a bare repo id with no :quant resolves to. A hand-rolled
+  # glob over snapshots/ got all three of those wrong. llama-server always gets
+  # --offline unless --pull was asked for; a cache hit needs no flag from you.
+  offline=(--offline)
+  if $pull; then offline=(); fi
   # --jinja is the default in llama.cpp 10090; passing it explicitly pins that
-  # default so a future flip cannot silently swap GLM's own template ([gMASK]
-  # <sop>, tool-call framing) for a generic one.
+  # default so a future flip cannot silently swap the model's own chat template
+  # -- and its tool-call framing, which Claude Code depends on -- for a generic
+  # one. Tool use through /v1/messages requires it.
   # shellcheck disable=SC2086
-  nohup llama-server $source --alias "$label" -c "$ctx" \
+  nohup llama-server $source "${offline[@]}" --alias "$label" -c "$ctx" \
     --port 40115 --host 127.0.0.1 --jinja >"$log" 2>&1 &
   server_pid=$!
   disown
@@ -126,12 +220,35 @@ if ! server_up; then
   n=0
   until server_up; do
     if ! kill -0 "$server_pid" 2>/dev/null; then
+      # --offline reports a cache miss as "failed to load model, ''", which
+      # does not hint at the cause, so say it here instead. Match the EMPTY
+      # path: "failed to load model" alone is llama.cpp's generic load-failure
+      # string, emitted for a corrupt gguf and an unsupported architecture too,
+      # and matching that would tell someone whose model failed to parse to go
+      # and --pull a file they already have, while tail'ing the real reason
+      # below is skipped. Only a miss produces the '' form.
+      #
+      # Gated on ! $pull as well, because --offline is not the only thing that
+      # leaves the path empty: a repo that cannot be resolved at all (a typo, or
+      # a gated one answering 401 without HF_TOKEN) also logs '' during a real
+      # fetch. Suggesting --pull to someone who just passed --pull would hide
+      # the 401 that is the actual problem.
+      if ! $pull && [[ "$(cat "$log" 2>/dev/null)" == *"failed to load model, ''"* ]]; then
+        echo "ccl: $label could not be resolved in the local cache; --pull to fetch it," >&2
+        echo "     or -m <other> to pick a model you already have." >&2
+        exit 1
+      fi
       echo "ccl: llama-server exited during startup:" >&2
       tail -n 15 "$log" >&2
       exit 1
     fi
     if [[ $n -ge 1200 ]]; then
-      echo "ccl: llama-server not healthy after 10m (see $log)" >&2
+      # Kill it rather than leak it. nohup+disown means the child outlives us,
+      # and a still-loading server does not answer /health, so the next `ccl`
+      # sees a free port and spawns a second one. Under --pull that is two
+      # concurrent multi-GB downloads of the same weights.
+      echo "ccl: llama-server not healthy after 10m; stopping it (see $log)" >&2
+      kill "$server_pid" 2>/dev/null || true
       exit 1
     fi
     sleep 0.5
@@ -139,10 +256,51 @@ if ! server_up; then
   done
 fi
 
-# ANTHROPIC_API_KEY (not AUTH_TOKEN) is required to override an active Claude
-# subscription login and force the custom endpoint; the value is unused here.
+# Ask the server rather than assume $ctx. The two diverge whenever a server is
+# already up at a different -c (this script restarts on a model mismatch, never
+# a ctx one), and n_ctx is the per-sequence window, which is what Claude Code
+# needs. total_slots is how many requests the server truly runs at once: with
+# -c and no -np, llama.cpp picked 4 slots over a unified KV buffer on this M4
+# Pro, so each slot still addresses the full 131072.
+#
+# Every jq here needs `|| true`, not just the regex fallback below: an empty
+# body makes jq exit 0, but a 200 carrying non-JSON (anything else answering on
+# :40115, which curl -sf accepts) makes it exit 2, and under set -e a failing
+# command substitution aborts the script at the assignment, before the fallback
+# can run -- right after waiting out a model load.
+props="$(curl -sf --max-time 3 "$url/props" 2>/dev/null || true)"
+served_ctx="$(jq -r '.default_generation_settings.n_ctx // empty' <<<"$props" 2>/dev/null || true)"
+slots="$(jq -r '.total_slots // empty' <<<"$props" 2>/dev/null || true)"
+[[ "$served_ctx" =~ ^[1-9][0-9]*$ ]] || {
+  # Say so. Falling back re-introduces the divergence this block exists to
+  # close: against a server already up at a smaller -c, $ctx is exactly the
+  # wrong number to hand Claude Code, and it overflows silently.
+  echo "ccl: could not read n_ctx from $url/props; assuming $ctx" >&2
+  served_ctx="$ctx"
+}
+[[ "$slots" =~ ^[1-9][0-9]*$ ]] || slots=1
+
+# CLAUDE_CODE_MAX_CONTEXT_TOKENS, not --autocompact: the flag rejects anything
+# below 100k, so `LLAMA_CONTEXT_LENGTH=65536 ccl` would die on argv parsing
+# AFTER the model load. The env var takes any value, and being an env var it
+# stays overridable from the caller's environment. Without either, Claude Code
+# does not recognise "$label" and assumes a 200k window against a smaller
+# served one, then overflows it.
+# MAX_CONCURRENT_SUBAGENTS defaults to 20 in Claude Code 2.1.251, which would
+# queue 20 deep on a server serving $slots at a time.
+#
+# --dangerously-skip-permissions is opt-in (-y) rather than always-on. It is
+# not overridable once passed -- --permission-mode manual does not win against
+# it, and there is no --no- form -- so baking it in would remove the prompt
+# with no way back, for the weakest model in the toolbox. `ccnim` passes no
+# permission flag either.
+claude_args=()
+if $yolo; then claude_args+=(--dangerously-skip-permissions); fi
+
 ANTHROPIC_BASE_URL="$url" \
   ANTHROPIC_API_KEY="llama" \
   ANTHROPIC_MODEL="$label" \
   ANTHROPIC_SMALL_FAST_MODEL="$label" \
-  exec claude "$@"
+  CLAUDE_CODE_MAX_CONTEXT_TOKENS="${CLAUDE_CODE_MAX_CONTEXT_TOKENS:-$served_ctx}" \
+  CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS="${CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS:-$slots}" \
+  exec claude "${claude_args[@]}" "$@"
