@@ -1,45 +1,68 @@
 #!/bin/bash
 # Claude Code on NVIDIA NIM (free hosted models) via the Olla proxy
 #
-# Usage: ccnim [-m MODEL] [-r] [-h] [claude args...]
-#   -m, --model     glm (default) | nemotron | <full NIM model id>
-#   -r, --restart   Restart the Olla proxy first (use after editing its config)
+# Usage: ccnim [-m MODEL] [--restart] [-h] [claude args...]
+#   -m, --model     kimi (default) | flash | pro | nemotron | <NIM model id>
+#       --restart   Restart the Olla proxy first (use after editing its config)
 #   -h, --help      Show this help message
 #
 # Runs Claude Code CLI against a free NIM model through Olla, a local
 # Anthropic<->OpenAI proxy. The NIM key is read from 1Password at runtime and
-# never stored. -m switches both the main agent and subagents (Olla rewrites
-# the alias targets and reloads). Olla auto-starts on :40114 if not running.
+# never stored. -m switches both the main agent and subagents, with no restart:
+# every model tier is pointed at the chosen id, so Olla only ever sees that one
+# name. Olla auto-starts on :40114 if not running.
 # For offline/confidential or heavy parallel work use `ccl` (local llama.cpp).
 
 set -e
 
 show_help() {
-  sed -n '2,13s/^# \{0,1\}//p' "$0"
+  sed -n '2,14s/^# \{0,1\}//p' "$0"
   exit 0
 }
 
 olla_url="http://127.0.0.1:40114"
 olla_config="$HOME/.config/olla/config.yaml"
-op_ref="op://Private/r4dc7zukl4tr2yhye3vlonrh4i/credential"
+# Item title is "nvidia NIM API key" — the id below is recreated whenever the key
+# is rotated, and a dead id fails as an unhelpful "couldn't read" error, so look
+# it up by title (`op item list | rg -i nvidia`) rather than guessing.
+op_ref="op://Private/c6x3xko43h7eibqpibtz7ou5uq/credential"
 
 restart=false
-model="z-ai/glm-5.2"
+# Measured 2026-08-29 end to end, not by curl on a toy prompt. Claude Code's
+# real request body is ~113 KB, and that is the only size worth ranking on: on a
+# 92 KB payload kimi-k3 answers in 2.5s where deepseek-v4-pro takes 146.4s. A
+# tiny-prompt benchmark ranked pro first and was simply measuring the wrong
+# thing. `ccnim -m kimi -p ...` returns in 6.6s wall, 2.6s through Olla.
+#
+# kimi emits into reasoning_content rather than content; that is fine here
+# because Olla maps it (response.go:191, streaming.go:248-281), which is also
+# why pro's "pure content" is not the advantage it looks like.
+model="moonshotai/kimi-k3"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -m | --model)
       [[ -n "${2:-}" ]] || {
-        echo "ccnim: -m requires a model (glm | nemotron | <id>)" >&2
+        echo "ccnim: -m requires a model (kimi | flash | pro | nemotron | <id>)" >&2
         exit 1
       }
+      # No inkling (410, EOL 2026-08-25) and no glm (5.2 delisted). Both were
+      # short names here until the catalogue moved under them; a dead id fails
+      # as a 410 mid-session, so re-check before adding one.
       case "$2" in
-        glm) model="z-ai/glm-5.2" ;;
+        kimi) model="moonshotai/kimi-k3" ;;
+        flash) model="deepseek-ai/deepseek-v4-flash-0731" ;;
+        # Frontier quality, but 146s on a realistic turn: fine for one careful
+        # question, not for an agent loop.
+        pro) model="deepseek-ai/deepseek-v4-pro-0813" ;;
         nemotron) model="nvidia/nemotron-3-ultra-550b-a55b" ;;
         *) model="$2" ;;
       esac
       shift 2
       ;;
-    -r | --restart)
+    # Long-only: claude owns -r as --resume, and swallowing it here restarted
+    # Olla and then handed the session id on as a bare positional prompt, so
+    # asking to resume a session silently started a new one.
+    --restart)
       restart=true
       shift
       ;;
@@ -63,7 +86,8 @@ command -v olla >/dev/null || {
 }
 
 key=$(op read "$op_ref" 2>/dev/null) || {
-  echo "ccnim: couldn't read NIM key from 1Password (run 'op signin' first)" >&2
+  echo "ccnim: couldn't read NIM key from 1Password ($op_ref)" >&2
+  echo "       Check 'op signin', then that the item still exists (ids change on rotation)." >&2
   exit 1
 }
 [[ -n "$key" ]] || {
@@ -71,32 +95,15 @@ key=$(op read "$op_ref" 2>/dev/null) || {
   exit 1
 }
 
-# Subagents send real Claude model names, not ANTHROPIC_MODEL, so they only
-# follow -m if Olla's aliases point at the chosen model. Repoint the alias
-# targets (4-space "- model" lines) and force a reload when the model changes.
-current=$(grep -m1 '^    - ' "$olla_config" | sed -E 's/^    - //')
-if [[ -z "$current" ]]; then
-  echo "ccnim: no '    - <model>' alias lines in $olla_config — subagents would 404." >&2
-  echo "       Check the model_aliases indentation/schema in the Olla config." >&2
-  exit 1
-fi
-if [[ "$current" != "$model" ]]; then
-  # Rewrite into a temp file in the same dir (atomic rename) and only commit on
-  # success — a failed sed must not fall through and launch the wrong model.
-  tmp=$(mktemp "$olla_config.XXXXXX")
-  if ! sed "s|^    - .*|    - $model|" "$olla_config" >"$tmp"; then
-    echo "ccnim: failed to rewrite Olla config; model not switched" >&2
-    rm -f "$tmp"
-    exit 1
-  fi
-  mv "$tmp" "$olla_config" || {
-    echo "ccnim: failed to install rewritten Olla config" >&2
-    rm -f "$tmp"
-    exit 1
-  }
-  echo "ccnim: model -> $model (Olla reloading)" >&2
-  restart=true
-fi
+# No alias rewriting. This used to sed Olla's model_aliases to repoint every
+# claude-* name at the chosen model and restart, because subagents emitted those
+# literals rather than ANTHROPIC_MODEL. Setting the four tier vars at the exec
+# below removes the cause: nothing emits a claude-* name any more, and Olla
+# routes the raw NIM id directly (it is listed as-is in /olla/models). That also
+# retires a mutation of a config file this repo does not own, which is how the
+# alias table came to be a whole model generation out of date (stopping at
+# claude-opus-4-8 while 2.1.251 emits claude-opus-5) without anyone noticing.
+# Switching models is now just a different ANTHROPIC_MODEL, no restart.
 
 if $restart; then
   pkill -f "olla -c $olla_config" 2>/dev/null || true
@@ -132,10 +139,49 @@ if ! olla_up; then
   done
 fi
 
+# Served context, from the build.nvidia.com carousel feed. Left unset for models
+# with no figure: Claude Code then assumes 200k, which is under every served
+# window here, so it wastes headroom rather than overflowing. The feed is the
+# only programmatic source and it is STALE (unchanged since 2026-08-08, still
+# listing glm-5.2 and the EOL'd pre-0813 pro), so treat these as approximate and
+# re-check when a default changes.
+# No CLAUDE_CODE_MAX_CONTEXT_TOKENS here on purpose. The only programmatic
+# source is the build.nvidia.com carousel feed, and it has no entry for either
+# recommended model -- so the block would never fire on the path you actually
+# run, only on `-m pro` and `-m nemotron`, both of which the doc says not to
+# loop. On nemotron it would actively hurt: 1,048,576 raises the autocompact
+# ceiling 5x over Claude Code's 200k default, pushing megabyte bodies at a demo
+# endpoint whose read timeout already had to be raised for 113 KB.
+#
+# The 200k default is under every window served here, so leaving it unset wastes
+# headroom rather than overflowing. That is the right way round.
+
 # ANTHROPIC_API_KEY (not AUTH_TOKEN) is required to override an active Claude
 # subscription login and force the custom endpoint; the value is unused by Olla.
+#
+# All six model vars, not just the first two. Unset, each tier resolves to a
+# hardcoded literal -- claude-sonnet-5 and claude-opus-5 in 2.1.251 -- which Olla
+# 404s ("no healthy endpoints available for model: claude-sonnet-5"). 50 agents
+# under ~/.claude pin a tier (30 sonnet, 15 opus, 5 haiku) and every one of them
+# would fail mid-session. Pointing the tiers at the chosen model also means
+# nothing ever emits a claude-* literal, which is what makes the Olla alias table
+# unnecessary rather than merely stale.
+#
+# MAX_CONCURRENT_SUBAGENTS caps the burst at 4 against Claude Code's default of
+# 20, which keeps it under NIM's benign concurrency gate (~6, 429s only the
+# excess, no penalty). It does NOT solve the punitive rate cap: at kimi's 2.5s
+# per turn, 4 concurrent is ~96 req/min against an observed ceiling nearer
+# 13-20/min, and the parent alone is already ~24/min. Nothing settable here
+# reaches that -- it needs concurrency below 1 -- so this buys a later lockout,
+# not no lockout. There is nothing to react to either: a 429 carries no
+# Retry-After and a 200 can hide an in-stream ResourceExhausted frame.
 ANTHROPIC_BASE_URL="$olla_url/olla/anthropic" \
   ANTHROPIC_API_KEY="olla" \
   ANTHROPIC_MODEL="$model" \
   ANTHROPIC_SMALL_FAST_MODEL="$model" \
+  ANTHROPIC_DEFAULT_OPUS_MODEL="$model" \
+  ANTHROPIC_DEFAULT_SONNET_MODEL="$model" \
+  ANTHROPIC_DEFAULT_HAIKU_MODEL="$model" \
+  ANTHROPIC_DEFAULT_FABLE_MODEL="$model" \
+  CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS="${CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS:-4}" \
   exec claude "$@"
