@@ -1,50 +1,63 @@
 #!/bin/bash
-# Refuse a Claude-made commit whose content has not been through a reviewer agent.
-# Called from the global pre-commit hook, after lefthook.
+# Review gate for Claude-made changes. Keys on CLAUDECODE: a speed bump for an
+# honest agent, not a boundary.
 #
-# A speed bump for an honest agent, not a boundary: it keys on CLAUDECODE, which
-# the model can unset.
+#   review-gate                        pre-commit: advisory, always exits 0
+#   review-gate --pending              exit 1 while HEAD is a Claude commit no
+#                                      reviewer has seen (the post-commit gate)
+#   review-gate --push LOCAL REMOTE    exit 1 unless every commit in REMOTE..LOCAL
+#                                      was reviewed, individually or as a range
+#   review-gate --hash                 print the content hashes record-review stores
 #
-#   review-gate            gate a commit (exit 1 to refuse)
-#   review-gate --hash     print both content hashes, for bin/record-review
+# Files in the common git dir:
+#   claude-review             hashes of what the last reviewer saw
+#   claude-reviewed-commits   one sha per line, commits a reviewer has seen
+#   claude-pending-review     sha of a Claude commit awaiting review
+#   claude-staged-reviewed    pre-commit found the staged content reviewed
+#   claude-review-force       escape hatch, consumed by whichever gate meets it
 set -uo pipefail
 
-# NEVER name a variable GIT_DIR here. Inside a linked worktree git exports it into
-# hooks, so assigning that name repoints every later git call, including the diff
-# below, and no review can then clear a worktree commit.
+# Never name a variable GIT_DIR: git exports it into hooks inside a linked
+# worktree, and assigning it repoints every later git call.
 
-# No HEAD before the first commit, and `git diff HEAD` fatals while still yielding
-# the digest of empty input, so every fresh-repo tree would hash alike.
+# No HEAD before the first commit; `git diff HEAD` fatals but still hashes empty input.
 diff_base() {
   git rev-parse -q --verify HEAD 2>/dev/null ||
     git hash-object -t tree /dev/null
 }
+
+# Start of the range a push would send: the remote tip when known, else the
+# fork point from the upstream or default branch, else the empty tree.
+range_base() { # $1 = local commit, $2 = remote sha or empty
+  local up b
+  if [ -n "${2:-}" ]; then
+    git merge-base "$2" "$1" 2>/dev/null && return
+  fi
+  if up=$(git rev-parse -q --verify '@{upstream}' 2>/dev/null); then
+    git merge-base "$up" "$1" 2>/dev/null && return
+  fi
+  for b in origin/HEAD origin/main origin/master main master; do
+    git merge-base "$b" "$1" 2>/dev/null && return
+  done
+  git hash-object -t tree /dev/null
+}
+
 digest() { shasum -a 256 | cut -c1-16; }
 
-# Two hashes, because the reviewer and the commit look at different things.
-#
-# The gate hashes the STAGED diff, because that is what actually lands. Hashing
-# the worktree instead left it blind to a path staged and then restored in the
-# worktree: the diff read clean while the staged change still committed.
-#
-# record-review stores both, because a reviewer usually reads the working diff
-# before anything is staged. The gate passes if what lands matches EITHER, which
-# keeps a pre-staging review valid through `git add` without letting staged
-# content the reviewer never saw through.
+# --no-prefix: diff.mnemonicPrefix labels worktree and index diffs differently,
+# so identical content would hash differently.
 worktree_hash() { git diff --no-prefix "$(diff_base)" 2>/dev/null | digest; }
 staged_hash() { git diff --no-prefix --cached "$(diff_base)" 2>/dev/null | digest; }
+range_hash() { git diff --no-prefix "$(range_base HEAD)" 2>/dev/null | digest; }
+rangehead_hash() { git diff --no-prefix "$(range_base HEAD)" HEAD 2>/dev/null | digest; }
 
-# sha256 of empty input. A reviewer most often finishes just after a commit
-# lands, when the tree is clean by construction, and recording that digest would
-# certify "nothing" and then match any commit that stages nothing.
 EMPTY_DIGEST=$(printf '' | digest)
 
 if [ "${1:-}" = "--hash" ]; then
-  printf 'worktree=%s\nstaged=%s\n' "$(worktree_hash)" "$(staged_hash)"
+  printf 'worktree=%s\nstaged=%s\nrange=%s\nrangehead=%s\n' \
+    "$(worktree_hash)" "$(staged_hash)" "$(range_hash)" "$(rangehead_hash)"
   exit 0
 fi
-
-[ "${CLAUDECODE:-}" = "1" ] || exit 0
 
 # --git-common-dir so a linked worktree and the main tree agree on where the
 # record lives; --git-dir for in-progress state, which is per-worktree.
@@ -52,71 +65,104 @@ COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null) || exit 0
 COMMON_DIR=$(cd "$COMMON_DIR" && pwd) || exit 0
 PRIVATE_DIR=$(git rev-parse --git-dir 2>/dev/null) || exit 0
 
-# git replays existing commits during these; the review happened for the original.
-for state in CHERRY_PICK_HEAD REVERT_HEAD MERGE_HEAD rebase-merge rebase-apply; do
-  [ -e "$PRIVATE_DIR/$state" ] && exit 0
-done
-
-# A submodule commit runs here with its own git dir while record-review resolved
-# the superproject's, so no review could ever clear it and the hatch would be the
-# only way through, on every commit. Announce rather than skip in silence.
 if [ -n "$(git rev-parse --show-superproject-working-tree 2>/dev/null)" ]; then
-  echo "review-gate: submodule commit, not gated (the review record lives in the superproject)." >&2
+  echo "review-gate: submodule, not gated (the review record lives in the superproject)." >&2
   exit 0
 fi
 
 ARTIFACT="$COMMON_DIR/claude-review"
+STAMPS="$COMMON_DIR/claude-reviewed-commits"
+PENDING="$COMMON_DIR/claude-pending-review"
+STAGED_OK="$COMMON_DIR/claude-staged-reviewed"
 FORCE="$COMMON_DIR/claude-review-force"
+recorded() { sed -n "s/^$1=//p" "$ARTIFACT" 2>/dev/null; }
+stamped() { grep -qx "$1" "$STAMPS" 2>/dev/null; }
 
-# Tested, never consumed. commit-msg runs after pre-commit, so consuming here
-# means a message check-commit-msg rejects destroys the hatch and leaves no way
-# through: exactly the failure this gate exists to remove, one hook later.
-# git/hooks/post-commit clears it, once the commit has actually landed.
-[ -f "$FORCE" ] && exit 0
-
-# What actually lands.
-current=$(staged_hash)
-
-# Nothing staged means nothing lands: a reword-only `--amend`, an
-# `--allow-empty`, or a commit git is about to reject on its own. There is no
-# content to review, and denying wedged the reword case with advice ("stage the
-# change first") that could never be followed. --amend is gated separately by
-# commit-guard.sh, which knows something git cannot: whether I asked for it.
-[ "$current" = "$EMPTY_DIGEST" ] && exit 0
-
-reviewed_worktree=$(sed -n 's/^worktree=//p' "$ARTIFACT" 2>/dev/null)
-reviewed_staged=$(sed -n 's/^staged=//p' "$ARTIFACT" 2>/dev/null)
-
-if [ "$current" = "$reviewed_worktree" ] || [ "$current" = "$reviewed_staged" ]; then
-  exit 0
-fi
-
-reviewed="$reviewed_worktree"
-if [ -n "$reviewed" ]; then
-  why="A review exists but it covered different content (reviewed ${reviewed}, committing ${current}).
-Something changed the tree after the review, most likely a formatter in lefthook.
-Re-run a reviewer so the review covers what actually lands."
-else
-  why="No reviewer agent has seen this tree. $(git diff --cached --name-only | wc -l | tr -d ' ') file(s) staged."
-fi
-
-cat >&2 <<EOF
-
-Review gate. ${why}
-
+reviewers() {
+  cat <<'EOF'
 Running any ONE of these clears the gate (exact subagent_type, the prefix matters):
   pr-review-toolkit:code-reviewer
   pr-review-toolkit:code-simplifier
   pr-review-toolkit:silent-failure-hunter   <- if error handling changed
   code-simplifier:code-simplifier
-  feature-dev:code-reviewer
+  feature-dev:code-reviewer                 <- Sonnet; the cheap per-commit tier
   adversarial-reviewer                      <- refutes rather than confirms; worth running last
 
-To skip a trivial or purely mechanical change, run this, then retry the commit:
-
-  touch ${FORCE}
-
-A failed commit costs nothing here: the review stays valid until the content
-changes, and the hatch survives until a commit actually lands.
 EOF
-exit 1
+}
+
+# ---- post-commit gate -------------------------------------------------------
+if [ "${1:-}" = "--pending" ]; then
+  head=$(git rev-parse -q --verify HEAD 2>/dev/null) || exit 0
+  pending=$(cat "$PENDING" 2>/dev/null)
+  [ -n "$pending" ] && [ "$pending" = "$head" ] || exit 0
+  if [ -f "$FORCE" ]; then
+    rm -f "$FORCE" "$PENDING"
+    echo "$head" >>"$STAMPS"
+    exit 0
+  fi
+  {
+    printf 'Review gate. Commit %s has not been reviewed, and nothing may be built on it until it has.\n' "${head:0:7}"
+    printf 'Edits and further commits in this repo are refused until a reviewer has seen it.\n'
+    printf 'Point the reviewer at the commit: git show %s\n\n' "${head:0:7}"
+    reviewers
+    printf 'For a trivial or purely mechanical commit, run this, then retry:\n\n  touch %s\n' "$FORCE"
+  } >&2
+  exit 1
+fi
+
+# ---- pre-push gate ----------------------------------------------------------
+if [ "${1:-}" = "--push" ]; then
+  [ "${CLAUDECODE:-}" = "1" ] || exit 0
+  local_sha="${2:-}"
+  remote_sha="${3:-}"
+  case "$remote_sha" in *[!0]*) ;; *) remote_sha="" ;; esac # all zeros: new ref
+  [ -n "$local_sha" ] || exit 0
+
+  # Consumed here: there is no post-push hook to clear it.
+  if [ -f "$FORCE" ]; then
+    rm -f "$FORCE"
+    exit 0
+  fi
+
+  base=$(range_base "$local_sha" "$remote_sha")
+  current=$(git diff --no-prefix "$base" "$local_sha" 2>/dev/null | digest)
+  [ "$current" = "$EMPTY_DIGEST" ] && exit 0
+
+  if [ "$current" = "$(recorded range)" ] || [ "$current" = "$(recorded rangehead)" ]; then
+    exit 0
+  fi
+
+  unstamped=""
+  for c in $(git rev-list "$base..$local_sha" 2>/dev/null); do
+    stamped "$c" || unstamped="$unstamped ${c:0:7}"
+  done
+  [ -z "$unstamped" ] && exit 0
+
+  n=$(git diff --name-only "$base" "$local_sha" 2>/dev/null | wc -l | tr -d ' ')
+  {
+    printf '\nReview gate. Unreviewed commits in this push:%s (%s file(s) in %s..%s).\n' \
+      "$unstamped" "$n" "${base:0:7}" "${local_sha:0:7}"
+    printf 'Either review each of them, or run one reviewer over the whole branch.\n\n'
+    reviewers
+    printf 'To skip a trivial or purely mechanical change, run this, then push again:\n\n  touch %s\n\n' "$FORCE"
+    printf 'A refused push costs nothing: the commits stay, the review stays valid until the content changes.\n'
+  } >&2
+  exit 1
+fi
+
+# ---- pre-commit (advisory) --------------------------------------------------
+[ "${CLAUDECODE:-}" = "1" ] || exit 0
+rm -f "$STAGED_OK"
+for state in CHERRY_PICK_HEAD REVERT_HEAD MERGE_HEAD rebase-merge rebase-apply; do
+  [ -e "$PRIVATE_DIR/$state" ] && exit 0
+done
+
+current=$(staged_hash)
+[ "$current" = "$EMPTY_DIGEST" ] && exit 0
+if [ "$current" = "$(recorded worktree)" ] || [ "$current" = "$(recorded staged)" ]; then
+  touch "$STAGED_OK"
+  exit 0
+fi
+echo "review-gate: committing unreviewed content ($(git diff --cached --name-only | wc -l | tr -d ' ') file(s)); it will need a review before the next edit." >&2
+exit 0

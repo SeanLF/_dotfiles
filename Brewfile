@@ -41,6 +41,8 @@ brew "grep"
 brew "hey"
 # Command-line tool to export and inspect local iMessage database
 brew "imessage-exporter"
+# Style and grammar checker
+brew "languagetool"
 # Pager program similar to more
 brew "less"
 # YAML Parser
@@ -51,6 +53,8 @@ brew "llama.cpp"
 brew "make"
 # Mac App Store command-line interface
 brew "mas"
+# CLI interface for Mercury banking
+brew "mercury-cli"
 # Polyglot runtime manager (asdf rust clone)
 brew "mise"
 # Ping Tool in Rust with Real-Time Data and Visualizations
@@ -135,14 +139,16 @@ cask "stremio@beta"
 cask "tailscale-app"
 # Multiplayer code editor
 cask "zed"
+# Video communication and virtual meeting platform
+cask "zoom"
 mas "1Password for Safari", id: 1569813296
 mas "Consent-O-Matic", id: 1606897889
 mas "Flighty", id: 1358823008
 mas "TestFlight", id: 899247664
 mas "WhatsApp", id: 310633997
-mas "Xcode", id: 497799835
 go "cmd/go"
 go "cmd/gofmt"
-go "github.com/sqlc-dev/sqlc/cmd/sqlc"
 cargo "cargo-cyclonedx"
+uv "fava"
 uv "osxphotos"
+uv "pytr"

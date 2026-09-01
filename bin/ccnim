@@ -22,10 +22,8 @@ show_help() {
 
 olla_url="http://127.0.0.1:40114"
 olla_config="$HOME/.config/olla/config.yaml"
-# Item title is "nvidia NIM API key" — the id below is recreated whenever the key
-# is rotated, and a dead id fails as an unhelpful "couldn't read" error, so look
-# it up by title (`op item list | rg -i nvidia`) rather than guessing.
-op_ref="op://Private/c6x3xko43h7eibqpibtz7ou5uq/credential"
+# By title: item ids change on key rotation.
+op_ref="op://Private/nvidia NIM API key/credential"
 
 restart=false
 # Measured 2026-08-29 end to end, not by curl on a toy prompt. Claude Code's
@@ -139,17 +137,12 @@ if ! olla_up; then
   done
 fi
 
-# Served context, from the build.nvidia.com carousel feed. Left unset for models
-# with no figure: Claude Code then assumes 200k, which is under every served
-# window here, so it wastes headroom rather than overflowing. The feed is the
-# only programmatic source and it is STALE (unchanged since 2026-08-08, still
-# listing glm-5.2 and the EOL'd pre-0813 pro), so treat these as approximate and
-# re-check when a default changes.
 # No CLAUDE_CODE_MAX_CONTEXT_TOKENS here on purpose. The only programmatic
-# source is the build.nvidia.com carousel feed, and it has no entry for either
-# recommended model -- so the block would never fire on the path you actually
-# run, only on `-m pro` and `-m nemotron`, both of which the doc says not to
-# loop. On nemotron it would actively hurt: 1,048,576 raises the autocompact
+# source is the build.nvidia.com carousel feed, which is STALE (unchanged since
+# 2026-08-08, still listing glm-5.2 and the EOL'd pre-0813 pro) and has no entry
+# for either recommended model, so the block would never fire on the path you
+# actually run, only on `-m pro` and `-m nemotron`, both of which the doc says
+# not to loop. On nemotron it would actively hurt: 1,048,576 raises the autocompact
 # ceiling 5x over Claude Code's 200k default, pushing megabyte bodies at a demo
 # endpoint whose read timeout already had to be raised for 113 KB.
 #
@@ -160,7 +153,7 @@ fi
 # subscription login and force the custom endpoint; the value is unused by Olla.
 #
 # All six model vars, not just the first two. Unset, each tier resolves to a
-# hardcoded literal -- claude-sonnet-5 and claude-opus-5 in 2.1.251 -- which Olla
+# hardcoded literal, claude-sonnet-5 and claude-opus-5 in 2.1.251, which Olla
 # 404s ("no healthy endpoints available for model: claude-sonnet-5"). 50 agents
 # under ~/.claude pin a tier (30 sonnet, 15 opus, 5 haiku) and every one of them
 # would fail mid-session. Pointing the tiers at the chosen model also means
@@ -172,7 +165,7 @@ fi
 # excess, no penalty). It does NOT solve the punitive rate cap: at kimi's 2.5s
 # per turn, 4 concurrent is ~96 req/min against an observed ceiling nearer
 # 13-20/min, and the parent alone is already ~24/min. Nothing settable here
-# reaches that -- it needs concurrency below 1 -- so this buys a later lockout,
+# reaches that (it needs concurrency below 1), so this buys a later lockout,
 # not no lockout. There is nothing to react to either: a 429 carries no
 # Retry-After and a 200 can hide an in-stream ResourceExhausted frame.
 ANTHROPIC_BASE_URL="$olla_url/olla/anthropic" \

@@ -83,7 +83,7 @@ done
 server_up() { curl -sf -o /dev/null --max-time 2 "$url/health" 2>/dev/null; }
 
 # The router's own registry is the source of truth for what exists, what is
-# loaded, and how it was resolved -- there is no cache check or model-identity
+# loaded, and how it was resolved; there is no cache check or model-identity
 # bookkeeping to do here. Every jq needs `|| true` at the call site: jq exits 5
 # on a non-JSON body (anything else answering on :40115 satisfies curl -sf), and
 # under bash 3.2 a failing command substitution aborts the script at the
@@ -100,7 +100,7 @@ router_argv() {
   local p
   # Scoped to the port, matching the pkill selector below. A bare
   # --models-preset match picks any router by pid order, and reading another
-  # one's argv could report ours as offline when it is not -- the exact state
+  # one's argv could report ours as offline when it is not; the exact state
   # that lets a cache miss start a multi-GB download unasked.
   p="$(pgrep -f 'llama-server .*--port 40115' 2>/dev/null | head -1)"
   [[ -n "$p" ]] && ps -o args= -p "$p" 2>/dev/null || true
@@ -195,18 +195,14 @@ fi
 # clamps to n_ctx_train, so the preset's number cannot be trusted as served.
 if [[ "$status" != "loaded" ]]; then
   echo "ccl: loading $model" >&2
+  # The router appends across loads; only search lines written by this one.
+  log_mark=$(wc -l <"$log" 2>/dev/null | tr -d ' ')
   curl -sf --max-time 900 "$url/v1/messages" -H 'content-type: application/json' \
     -d "{\"model\":\"$model\",\"max_tokens\":1,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}" \
     >/dev/null 2>&1 || {
-    # A preset model that is not cached fails HERE, not at the offer check, and
-    # --offline reports it as llama.cpp's empty-path form. Match on that: the
-    # bare "failed to load model" string also covers a corrupt gguf and an
-    # unsupported architecture, whose real reason the tail below must show.
-    # tail, not cat: the router appends for its whole lifetime, so a miss from
-    # an earlier `-m` in the same session stays in the file and would make a
-    # LATER corrupt-gguf failure print this hint and skip the tail showing the
-    # real reason. Bounded to the same window the handler prints.
-    if ! $pull && [[ "$(tail -n 40 "$log" 2>/dev/null)" == *"failed to load model, ''"* ]]; then
+    # The empty-path form is the cache miss; the bare "failed to load model"
+    # string also covers a corrupt gguf, whose reason the tail below must show.
+    if ! $pull && [[ "$(tail -n +"$((${log_mark:-0} + 1))" "$log" 2>/dev/null)" == *"failed to load model, ''"* ]]; then
       echo "ccl: $model is declared but not in the local cache; --pull to fetch it." >&2
       exit 1
     fi

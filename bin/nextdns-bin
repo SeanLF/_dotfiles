@@ -1,0 +1,35 @@
+#!/bin/bash
+# nextdns-bin: print the path of the nextdns binary launchd actually runs.
+#
+# /opt/homebrew/bin/nextdns is not it (pinned older; remote control only).
+# `nextdns activate` rewrites /etc/nextdns.conf from the flags the invoked
+# binary knows, so an older binary silently drops newer config keys.
+#
+# Usage: NEXTDNS=$(nextdns-bin) || exit 1
+
+set -u
+PLIST=/Library/LaunchDaemons/nextdns.plist
+
+p=$(/usr/libexec/PlistBuddy -c 'Print :ProgramArguments:0' "$PLIST" 2>/dev/null)
+if [[ -n "$p" && -x "$p" ]]; then
+  printf '%s\n' "$p"
+  exit 0
+fi
+
+pid=$(pgrep -f '/nextdns[^/ ]* run$' | head -1)
+if [[ -n "$pid" ]]; then
+  p=$(ps -o comm= -p "$pid" 2>/dev/null)
+  if [[ -n "$p" && -x "$p" ]]; then
+    printf '%s\n' "$p"
+    exit 0
+  fi
+fi
+
+# PATH may be an older build; callers that rewrite config should treat this as degraded.
+if p=$(command -v nextdns 2>/dev/null); then
+  printf '%s\n' "$p"
+  exit 0
+fi
+
+echo "nextdns-bin: no nextdns binary found (checked $PLIST, running process, PATH)" >&2
+exit 1

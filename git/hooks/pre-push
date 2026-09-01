@@ -1,17 +1,29 @@
 #!/bin/bash
-# Global pre-push. core.hooksPath replaces the whole hooks directory, so this must
-# hand off to lefthook or repos relying on it silently lose their checks.
+# Global pre-push: the review gate for Claude-made changes, then lefthook.
 #
 # SECURITY: lefthook.yml is repo-controlled and runs arbitrary commands. Git
 # never clones .git/hooks precisely so that cloning cannot execute a repo's
-# code. Delegating unconditionally from a global hook hands that protection
-# back, so delegation needs per-repo opt-in. `git clone` does not import the
-# source repo's local config, which is what makes this a real boundary.
-#
-# Trust a repo with:  git config --local hooks.lefthook true
-# Read at --local scope deliberately: a global value would trust every repo,
-# including hostile clones, from a single accidental setting.
+# code, so delegation needs per-repo opt-in:  git config --local hooks.lefthook true
+# Read at --local scope deliberately: a global value would trust every repo.
 set -euo pipefail
+
+# Both consumers read the ref list from stdin; capture it once.
+REFS=$(cat)
+
+# Fixed path in _dotfiles, so it is trusted whichever repo we are standing in.
+# Inert unless CLAUDECODE=1.
+GATE="${REVIEW_GATE_BIN:-$HOME/Developer/_dotfiles/bin/review-gate}"
+if [ -x "$GATE" ]; then
+  while read -r _local_ref local_sha _remote_ref remote_sha; do
+    [ -n "$local_sha" ] || continue
+    case "$local_sha" in *[!0]*) ;; *) continue ;; esac # deleting a remote ref
+    "$GATE" --push "$local_sha" "$remote_sha" || exit 1
+  done <<EOF
+$REFS
+EOF
+elif [ -e "$GATE" ]; then
+  echo "pre-push: $GATE exists but is not executable, so the review gate is not running." >&2
+fi
 
 [ -f lefthook.yml ] || exit 0
 if [ "$(git config --local --bool hooks.lefthook 2>/dev/null || echo false)" != "true" ]; then
@@ -20,4 +32,4 @@ if [ "$(git config --local --bool hooks.lefthook 2>/dev/null || echo false)" != 
   exit 0
 fi
 command -v lefthook >/dev/null 2>&1 || exit 0
-exec lefthook run --no-auto-install pre-push "$@"
+printf '%s\n' "$REFS" | lefthook run --no-auto-install pre-push "$@"

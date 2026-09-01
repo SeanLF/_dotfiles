@@ -103,6 +103,19 @@
           {
             "type": "command",
             "command": "~/.claude/hooks/pre-pr-review.sh"
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/pending-review-guard.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/pending-review-guard.sh"
           }
         ]
       }
@@ -136,10 +149,12 @@
   "tui": "fullscreen",
   "skipDangerousModePermissionPrompt": true,
   "theme": "auto",
-  "verbose": true,
+  "verbose": false,
   "preferredNotifChannel": "ghostty",
+  "remoteControlAtStartup": true,
   "inputNeededNotifEnabled": false,
   "agentPushNotifEnabled": true,
   "skipAutoPermissionPrompt": true,
-  "voiceEnabled": true
+  "voiceEnabled": true,
+  "model": "claude-fable-5-1[1m]"
 }

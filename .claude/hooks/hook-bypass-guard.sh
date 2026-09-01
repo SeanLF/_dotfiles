@@ -109,8 +109,19 @@ while IFS= read -r seg; do
 
   # Making the gate non-executable makes pre-commit take its not-installed
   # branch and fail open in silence.
-  if seg_command_is "$seg" chmod && printf '%s' "$seg" | grep -qE 'review-gate|record-review'; then
-    deny "Changing the mode on review-gate or record-review disables the gate silently. ${HATCH}"
+  if seg_command_is "$seg" chmod && printf '%s' "$seg" | grep -qE 'review-gate|record-review|pending-review-guard'; then
+    deny "Changing the mode on review-gate, record-review or pending-review-guard disables the gate silently. ${HATCH}"
+  fi
+
+  # The gate's state files: deleting the pending marker or forging a stamp is
+  # the same as skipping the review. Tested on the RAW command, because the
+  # path is usually quoted ("$(git rev-parse ...)/claude-pending-review") and
+  # strip_quotes would hide it.
+  if seg_command_is "$seg" 'rm|unlink|truncate|tee|cp|mv|dd' && printf '%s' "$COMMAND" | grep -qE 'claude-(pending-review|reviewed-commits|review|staged-reviewed)([^-a-z]|$)'; then
+    deny "That is a review-gate state file. ${HATCH}"
+  fi
+  if printf '%s' "$COMMAND" | grep -qE '>>?[[:space:]]*"?[^[:space:]"]*claude-(pending-review|reviewed-commits|review|staged-reviewed)"?([[:space:]]|$)'; then
+    deny "Writing a review-gate state file forges a review. ${HATCH}"
   fi
 
   # -n means --no-verify on commit, but --dry-run on push, so this is

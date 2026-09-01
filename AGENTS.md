@@ -7,7 +7,7 @@
 
 ## Mode
 
-Default: don't touch code. Answer questions. An imperative naming a file or change is consent; otherwise ask which mode.
+Default: don't touch code. Answer questions. An imperative naming a file or change is consent; otherwise infer the mode from the verb, say which one you picked, and ask only when the readings would produce materially different work.
 
 - **exploring**: push back, ask what I think, no code.
 - **understanding**: a map.
@@ -43,8 +43,9 @@ Default: don't touch code. Answer questions. An imperative naming a file or chan
 
 ## Subagents
 
-- Not mid-task to re-check my own work; the pre-commit review gate is separate and stands.
+- Not mid-task to re-check my own work; the review gates (each commit before the next edit, the range before push) are separate and stand.
 - Cheap models at low effort, never cheap at high (`docs/usage-economics.md`).
+- Every agent definition pins a model. Never inherit; the parent may be the most expensive one.
 
 ## Writing
 

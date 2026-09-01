@@ -1,0 +1,264 @@
+#!/usr/bin/env python3
+# What Claude Code sessions actually spend, measured from local transcripts
+#
+# Usage: cache-meter [-h] [--rates] [--ttl] [--size] [--waste]
+#   --rates   per-token $ fitted to ccusage's own costs, with fit residual
+#   --ttl     cache hit rate by idle gap (where the prompt cache expires)
+#   --size    $/turn by context size (the dominant cost driver)
+#   --waste   cost of cache misses, by cause
+#   (no flag runs all four)
+#
+# No pricing table: per-token rates are least-squares fitted to ccusage's own
+# daily costs, and the fit residual is printed as the negative control.
+# Transcripts are trees (rewind, /fork, double-esc branch), so a call's
+# predecessor is found by walking parentUuid, never by timestamp order.
+
+import argparse
+import json
+import os
+import statistics
+import subprocess
+import sys
+from collections import Counter, defaultdict
+from datetime import datetime
+
+ROOT = os.path.expanduser("~/.claude/projects")
+TTL_SECONDS = 3300  # 55min: inside the observed 1h cache window, with margin
+
+
+def ccusage_daily():
+    """ccusage's own daily cost + token breakdown. Pinned, like ccpool does."""
+    env = dict(os.environ)
+    node = os.path.expanduser("~/.local/share/mise/installs/node/latest/bin")
+    if os.path.isdir(node):
+        env["PATH"] = node + os.pathsep + env.get("PATH", "")
+    try:
+        out = subprocess.run(["npx", "-y", "ccusage@20", "daily", "--json", "--breakdown"],
+                             capture_output=True, text=True, env=env, timeout=600, check=False)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        sys.exit(f"cache-meter: cannot run ccusage ({e}); refusing to guess prices")
+    if out.returncode != 0:
+        sys.exit(f"cache-meter: ccusage failed: {out.stderr.strip()[:300]}")
+    try:
+        return json.loads(out.stdout)
+    except ValueError:
+        sys.exit("cache-meter: ccusage returned no JSON (schema change?)")
+
+
+def claude_breakdowns(day):
+    """ccusage daily has no per-agent filter; it includes codex and gemini spend."""
+    return [b for b in day.get("modelBreakdowns", []) if b.get("modelName", "").startswith("claude")]
+
+
+def fit_rates(daily):
+    """Solve per-model $/token from ccusage costs. Returns {model: (out, cacheW, cacheR)}."""
+    rows = defaultdict(list)
+    for day in daily["daily"]:
+        for b in claude_breakdowns(day):
+            rows[b["modelName"]].append((b.get("outputTokens", 0), b.get("cacheCreationTokens", 0),
+                                         b.get("cacheReadTokens", 0), b.get("cost", 0.0)))
+    rates, resid = {}, {}
+    for model, rs in rows.items():
+        if len(rs) < 6:
+            continue
+        A = [r[:3] for r in rs]
+        y = [r[3] for r in rs]
+        n = 3
+        M = [[sum(A[k][i] * A[k][j] for k in range(len(A))) for j in range(n)]
+             + [sum(A[k][i] * y[k] for k in range(len(A)))] for i in range(n)]
+        for i in range(n):
+            p = max(range(i, n), key=lambda r: abs(M[r][i]))
+            M[i], M[p] = M[p], M[i]
+            if abs(M[i][i]) < 1e-9:
+                break
+            for r in range(n):
+                if r != i:
+                    f = M[r][i] / M[i][i]
+                    for c in range(i, n + 1):
+                        M[r][c] -= f * M[i][c]
+        else:
+            s = [M[i][n] / M[i][i] for i in range(n)]
+            rates[model] = s
+            worst = max(abs(sum(a * x for a, x in zip(A[k], s)) - y[k]) for k in range(len(A)))
+            resid[model] = (worst, sum(y), len(rs))
+    if not rates:
+        sys.exit("cache-meter: not enough ccusage history to fit rates")
+    return rates, resid
+
+
+def load_pairs():
+    """Adjacent API-call pairs along each transcript's parentUuid chain."""
+    pairs, calls, branchy = [], 0, 0
+    for dirpath, dirnames, filenames in os.walk(ROOT):
+        if os.path.basename(dirpath) == "subagents":
+            dirnames[:] = []          # subagents have their own cache; not this question
+            continue
+        for fn in filenames:
+            if not fn.endswith(".jsonl"):
+                continue
+            by_uuid, order = {}, []
+            try:
+                with open(os.path.join(dirpath, fn), errors="replace") as fh:
+                    for line in fh:
+                        if '"uuid"' not in line:
+                            continue
+                        try:
+                            r = json.loads(line)
+                        except ValueError:
+                            continue
+                        u = r.get("uuid")
+                        if u and u not in by_uuid:   # streaming re-logs the same uuid
+                            by_uuid[u] = r
+                            order.append(u)
+            except OSError:
+                continue
+            kids = Counter(r.get("parentUuid") for r in by_uuid.values())
+            if any(v > 1 for k, v in kids.items() if k):
+                branchy += 1
+
+            def usage(r):
+                if r.get("type") != "assistant" or r.get("isSidechain"):
+                    return None
+                u = (r.get("message") or {}).get("usage") or {}
+                if not u or u.get("cache_read_input_tokens", 0) + u.get("cache_creation_input_tokens", 0) == 0:
+                    return None
+                return u
+
+            for uid in order:
+                r = by_uuid[uid]
+                u = usage(r)
+                if not u:
+                    continue
+                calls += 1
+                p, anc, hops = r.get("parentUuid"), None, 0
+                while p and hops < 200:
+                    pr = by_uuid.get(p)
+                    if pr is None:
+                        break
+                    pu = usage(pr)
+                    if pu:
+                        anc = (pr, pu)
+                        break
+                    p, hops = pr.get("parentUuid"), hops + 1
+                if not anc:
+                    continue
+                pr, pu = anc
+                if r.get("requestId") and r.get("requestId") == pr.get("requestId"):
+                    continue             # same API call, logged twice
+                prev = sum(pu.get(k, 0) for k in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
+                cur = sum(u.get(k, 0) for k in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
+                if prev < 5000:
+                    continue
+                t0, t1 = (datetime.fromisoformat(x["timestamp"].replace("Z", "+00:00")) for x in (pr, r))
+                pairs.append({
+                    "gap": (t1 - t0).total_seconds(), "prev": prev, "cur": cur,
+                    "read": u.get("cache_read_input_tokens", 0),
+                    "hit": min(u.get("cache_read_input_tokens", 0) / prev, 1.5),
+                    "model": (r.get("message") or {}).get("model", "?"),
+                    "mchg": (pr.get("message") or {}).get("model") != (r.get("message") or {}).get("model"),
+                    "shrank": cur < prev * 0.6, "week": t1.strftime("%G-W%V"), "when": t1})
+    return pairs, calls, branchy
+
+
+def main():
+    ap = argparse.ArgumentParser(add_help=True, description="measure Claude Code cache economics")
+    for f in ("rates", "ttl", "size", "waste"):
+        ap.add_argument("--" + f, action="store_true")
+    a = ap.parse_args()
+    if not any((a.rates, a.ttl, a.size, a.waste)):
+        a.rates = a.ttl = a.size = a.waste = True
+
+    daily = ccusage_daily()
+    rates, resid = fit_rates(daily)
+    busiest = max(resid, key=lambda m: resid[m][1])
+
+    def reprefill(model):
+        r = rates.get(model) or rates[busiest]
+        return r[1] - r[2]              # cache write minus the read it replaced, $/token
+
+    def readrate(model):
+        return (rates.get(model) or rates[busiest])[2]
+
+    total = sum(b.get("cost", 0.0) for d in daily["daily"] for b in claude_breakdowns(d))
+    if not total:
+        sys.exit("cache-meter: ccusage reports no Claude spend; nothing to measure against")
+
+    # --rates needs nothing but ccusage; the transcript walk is the slow part.
+    if a.ttl or a.size or a.waste:
+        pairs, calls, branchy = load_pairs()
+        if not pairs:
+            sys.exit("cache-meter: no chained API-call pairs in ~/.claude/projects (empty, or subagent-only transcripts)")
+        clean = [p for p in pairs if not p["shrank"] and not p["mchg"] and p["gap"] < 300]
+        span = (min(p["when"] for p in pairs), max(p["when"] for p in pairs))
+        print(f"{calls:,} API calls, {len(pairs):,} chained pairs, {branchy:,} branched transcripts, "
+              f"{span[0]:%Y-%m-%d}..{span[1]:%Y-%m-%d}")
+
+    if a.rates:
+        print(f"\n== $/Mtok fitted to ccusage (total ${total:,.0f}) ==")
+        print(f"{'model':<28}{'days':>5}{'output':>9}{'cache wr':>10}{'cache rd':>10}{'worst resid':>13}")
+        for m in sorted(rates, key=lambda m: -resid[m][1]):
+            w, tot, n = resid[m]
+            print(f"{m:<28}{n:>5}" + "".join(f"{x*1e6:>9.2f} " for x in rates[m])
+                  + f"  ${w:.2f} of ${tot:,.0f}")
+        print("  (residual is the control: a wrong fit cannot reproduce ccusage's own totals)")
+        by = defaultdict(float)
+        for d in daily["daily"]:
+            for b in claude_breakdowns(d):
+                r = rates.get(b["modelName"]) or rates[busiest]
+                by["output"] += b.get("outputTokens", 0) * r[0]
+                by["cache write"] += b.get("cacheCreationTokens", 0) * r[1]
+                by["cache read"] += b.get("cacheReadTokens", 0) * r[2]
+        print("\n  where the money goes:")
+        for k, v in sorted(by.items(), key=lambda kv: -kv[1]):
+            print(f"    {k:<13} ${v:>9,.0f}  {100*v/total:5.1f}%")
+
+    if a.ttl:
+        print("\n== cache hit rate by idle gap (same model, no compaction) ==")
+        for lo, hi in [(0,60),(60,300),(300,900),(900,1800),(1800,3300),(3300,3900),(3900,7200),(7200,86400)]:
+            sel = [p for p in pairs if not p["shrank"] and not p["mchg"] and lo <= p["gap"] < hi]
+            if not sel:
+                continue
+            miss = sum(1 for p in sel if p["hit"] < 0.5)
+            print(f"  {lo//60:>4}-{hi//60:<5}min  n={len(sel):<7} median_hit={statistics.median([p['hit'] for p in sel]):.3f}"
+                  f"  miss={100*miss/len(sel):5.1f}%")
+
+    if a.size:
+        print("\n== $/turn by context size (same model, <5min gap) ==")
+        print(f"{'context':>14}{'turns':>9}{'$ to re-read it':>18}{'miss%':>8}")
+        for lo, hi in [(0,50_000),(50_000,100_000),(100_000,200_000),(200_000,400_000),(400_000,700_000),(700_000,1_100_000)]:
+            sel = [p for p in clean if lo <= p["prev"] < hi]
+            if not sel:
+                continue
+            rd = statistics.mean([p["read"] * readrate(p["model"]) for p in sel])
+            miss = 100 * sum(1 for p in sel if p["hit"] < 0.5) / len(sel)
+            print(f"{f'{lo//1000}-{hi//1000}k':>14}{len(sel):>9}{rd:>18.3f}{miss:>7.1f}%")
+
+    if a.waste:
+        waste, wn, wtok, byweek = defaultdict(float), Counter(), Counter(), defaultdict(float)
+        for p in pairs:
+            w = max(0, min(p["prev"], p["cur"]) - p["read"])
+            if w < 5000:
+                continue
+            cause = ("compaction / context reset" if p["shrank"] else
+                     "idle past the cache TTL" if p["gap"] >= TTL_SECONDS else
+                     "model switched mid-session" if p["mchg"] else
+                     "other mid-session invalidation")
+            d = w * reprefill(p["model"])
+            waste[cause] += d; wn[cause] += 1; wtok[cause] += w; byweek[p["week"]] += d
+        print(f"\n== cost of cache misses, by cause (of ${total:,.0f} total) ==")
+        for k, v in sorted(waste.items(), key=lambda kv: -kv[1]):
+            print(f"  {k:<32} n={wn[k]:<6}{wtok[k]/1e6:>7.1f}M tok  ${v:>7,.0f}  {100*v/total:5.2f}%")
+        T = sum(waste.values())
+        print(f"  {'TOTAL':<32} n={sum(wn.values()):<6}{sum(wtok.values())/1e6:>7.1f}M tok  ${T:>7,.0f}  {100*T/total:5.2f}%")
+        if byweek:
+            print(f"  median week ${statistics.median(byweek.values()):,.0f}, worst ${max(byweek.values()):,.0f} "
+                  f"({max(byweek, key=byweek.get)})")
+        else:
+            print("  no miss reached the 5k-token floor; nothing to attribute")
+        print("\n  one re-prefill costs, per 100k of context:")
+        for m in sorted(rates, key=lambda m: -resid[m][1])[:4]:
+            print(f"    {m:<26} ${reprefill(m)*100_000:.2f}")
+
+
+if __name__ == "__main__":
+    main()

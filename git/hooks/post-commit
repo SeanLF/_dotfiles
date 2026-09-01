@@ -1,15 +1,32 @@
 #!/bin/bash
-# Global post-commit: clears the review gate's escape hatch, and hands off to
-# lefthook. See pre-commit for the lefthook trust boundary.
+# Global post-commit: marks a Claude commit as awaiting review, then hands off
+# to lefthook. See pre-commit for the trust boundary.
 set -euo pipefail
 
-# Do not rename to GIT_DIR: git exports that into hooks inside a linked worktree,
-# and assigning it repoints every later git call, including lefthook's.
-COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null) || COMMON_DIR=""
-[ -n "$COMMON_DIR" ] && rm -f "$COMMON_DIR/claude-review-force"
+# Not named GIT_DIR: git exports that into hooks inside a linked worktree.
+if [ "${CLAUDECODE:-}" = "1" ]; then
+  COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null || true)
+  PRIVATE_DIR=$(git rev-parse --git-dir 2>/dev/null || true)
+  replaying=0
+  for state in CHERRY_PICK_HEAD REVERT_HEAD rebase-merge rebase-apply; do
+    [ -e "$PRIVATE_DIR/$state" ] && replaying=1
+  done
+  if [ -n "$COMMON_DIR" ] && [ "$replaying" = 0 ] && head=$(git rev-parse -q --verify HEAD 2>/dev/null); then
+    if [ -f "$COMMON_DIR/claude-staged-reviewed" ]; then
+      # pre-commit found the staged content already reviewed.
+      rm -f "$COMMON_DIR/claude-staged-reviewed"
+      echo "$head" >>"$COMMON_DIR/claude-reviewed-commits"
+    elif [ -f "$COMMON_DIR/claude-review-force" ]; then
+      # The hatch was touched before committing; leave it for the push gate.
+      echo "$head" >>"$COMMON_DIR/claude-reviewed-commits"
+    else
+      echo "$head" >"$COMMON_DIR/claude-pending-review"
+    fi
+  fi
+fi
 
-# Do not make this handoff unconditional: it prints a lefthook banner on every
-# commit machine-wide, and no repo here has a post-commit section.
+# Conditional on a post-commit section: unconditional handoff prints a lefthook
+# banner on every commit machine-wide.
 if [ -f lefthook.yml ] &&
   grep -q '^post-commit:' lefthook.yml &&
   [ "$(git config --local --bool hooks.lefthook 2>/dev/null || echo false)" = "true" ] &&

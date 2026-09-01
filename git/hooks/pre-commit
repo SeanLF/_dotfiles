@@ -24,12 +24,12 @@ if [ -f lefthook.yml ]; then
   fi
 fi
 
-# Fixed path in _dotfiles, so it is trusted whichever repo we are standing in,
-# same as check-commit-msg. Inert unless CLAUDECODE=1.
+# Advisory at commit time; the refusing gate is in pre-push. Fixed path in
+# _dotfiles, so it is trusted whichever repo we are standing in. Inert unless
+# CLAUDECODE=1.
 #
 # An `if`, not `[ -x ] && "$GATE"`: as the last line of a `set -e` script the &&
-# form exits 1 whenever the gate is absent, blocking every commit on a machine
-# that has not installed it yet.
+# form exits 1 whenever the gate is absent.
 GATE="${REVIEW_GATE_BIN:-$HOME/Developer/_dotfiles/bin/review-gate}"
 if [ -x "$GATE" ]; then
   "$GATE"

@@ -9,7 +9,7 @@
 # hook: git can see the commit, but only this side knows whether I asked for it.
 # Everything git can judge for itself has moved to git. Message shape is in
 # bin/check-commit-msg via commit-msg, the review gate is in bin/review-gate via
-# pre-commit.
+# pre-push.
 #
 # Fails OPEN on its own errors: a missed amend is cheaper than a wedged session.
 set -o pipefail
@@ -40,7 +40,7 @@ FORCE="/tmp/claude-commit-force-${SESSION_ID}"
 # TEST the sentinel, never consume it: this guard can deny twice in one commit
 # (amend and a staged plan), and consuming on the first would leave the second
 # unsatisfiable. Nothing else reads this file. The review gate's hatch is a
-# separate marker in $GIT_DIR, cleared by git/hooks/post-commit.
+# separate marker in $GIT_DIR, consumed by the pre-push gate.
 forced() { [ -n "$SESSION_ID" ] && [ -f "$FORCE" ]; }
 
 # Message shape is not checked here. bin/check-commit-msg enforces conventional

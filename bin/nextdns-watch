@@ -1,0 +1,247 @@
+#!/bin/bash
+# nextdns-watch: restart NextDNS only when its 127.0.0.1:53 listener is wedged.
+#
+# Two probes that fail for different reasons:
+#   liveness      dig @127.0.0.1 localhost        /etc/hosts-backed; never touches
+#                 the network (proxy/proxy.go:176-180). The ONLY restart trigger.
+#   reachability  dig @127.0.0.1 cloudflare.com   needs the upstream; logged for
+#                 context only. Restarting NextDNS does not fix a down VPN.
+#
+# Log:  ~/Library/Logs/nextdns-watch.log
+# Diag: ~/Library/Logs/nextdns-watch-diag/
+# Stop: launchctl bootout gui/$(id -u)/dev.seanfloyd.nextdns-watch
+
+set -u
+
+LOG="${NEXTDNS_WATCH_LOG:-$HOME/Library/Logs/nextdns-watch.log}"
+DIAG_DIR="${NEXTDNS_WATCH_DIAG_DIR:-$HOME/Library/Logs/nextdns-watch-diag}"
+INTERVAL="${NEXTDNS_WATCH_INTERVAL:-5}"            # seconds between probes
+TIMEOUT="${NEXTDNS_WATCH_TIMEOUT:-2}"              # per-probe dig timeout
+FAIL_THRESHOLD="${NEXTDNS_WATCH_FAILS:-2}"         # consecutive liveness fails before healing
+HEAL_COOLDOWN="${NEXTDNS_WATCH_COOLDOWN:-45}"      # min seconds between restarts
+MAX_HEALS="${NEXTDNS_WATCH_MAXHEALS:-3}"           # give up + back off after this many
+WAKE_GRACE="${NEXTDNS_WATCH_WAKE_GRACE:-30}"       # ignore failures for N s after a wake
+QUIET_HEARTBEAT="${NEXTDNS_WATCH_HEARTBEAT:-3600}" # max seconds between log lines while stuck
+PROBE_PORT="${NEXTDNS_WATCH_PORT:-53}"
+LIVE_NAME="${NEXTDNS_WATCH_LIVE_NAME:-localhost}"    # must be an /etc/hosts entry
+NET_NAME="${NEXTDNS_WATCH_NET_NAME:-cloudflare.com}" # must NOT be in /etc/hosts
+
+DIG=/usr/bin/dig
+PLIST=/Library/LaunchDaemons/nextdns.plist
+TS_BIN=/Applications/Tailscale.app/Contents/MacOS/Tailscale
+
+mkdir -p "$(dirname "$LOG")" "$DIAG_DIR"
+ts() { date '+%Y-%m-%d %H:%M:%S'; }
+now() { date '+%s'; }
+emit() { printf '%s  %s\n' "$(ts)" "$*" >>"$LOG"; }
+
+RESOLVER="${NEXTDNS_BIN_RESOLVER:-$HOME/Developer/_dotfiles/bin/nextdns-bin}"
+resolve_daemon_bin() { "$RESOLVER" 2>/dev/null; }
+
+# Match the command line, not the process name: the binary is versioned
+# (nextdns-1.48.0), so `pgrep -x nextdns` finds nothing.
+daemon_pid() { pgrep -f '/nextdns[^/ ]* run$' | head -1; }
+
+# Parse the NOPASSWD grants rather than trying the command (`restart` would
+# restart) or `sudo -l <cmd>` (a blanket ALL rule answers "permitted" for
+# commands that would still prompt).
+sudo_nopasswd_list() {
+  sudo -n -l 2>/dev/null |
+    awk '/NOPASSWD:/{sub(/^.*NOPASSWD: */,""); print}' |
+    tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$'
+}
+sudo_allowed() { # $1=bin $2=verb
+  local want="$1 $2" entry
+  while IFS= read -r entry; do
+    # Unquoted RHS on purpose: sudoers entries may be globs (/usr/local/bin/nextdns-*).
+    # shellcheck disable=SC2053
+    [[ "$want" == $entry ]] && return 0
+  done < <(sudo_nopasswd_list)
+  return 1
+}
+
+DAEMON_BIN=$(resolve_daemon_bin)
+# Prefer the daemon binary so `activate` cannot drop config keys it does not know.
+CTL_BIN="$DAEMON_BIN"
+if [[ -z "$CTL_BIN" ]] || ! sudo_allowed "$CTL_BIN" status; then
+  alt=$(command -v nextdns 2>/dev/null)
+  if [[ -n "$alt" ]] && sudo_allowed "$alt" status; then CTL_BIN="$alt"; fi
+fi
+
+preflight() {
+  local problems=0
+  [[ -n "$DAEMON_BIN" ]] || {
+    emit "PREFLIGHT FAIL  cannot resolve daemon binary from $PLIST"
+    problems=1
+  }
+  if [[ -n "$CTL_BIN" ]]; then
+    sudo_allowed "$CTL_BIN" restart || {
+      emit "PREFLIGHT FAIL  sudo NOPASSWD missing: $CTL_BIN restart; healing will not work"
+      problems=1
+    }
+    sudo_allowed "$CTL_BIN" trace || {
+      emit "PREFLIGHT WARN  sudo NOPASSWD missing: $CTL_BIN trace; diagnostics will be empty"
+      problems=1
+    }
+  else
+    emit "PREFLIGHT FAIL  no usable control binary"
+    problems=1
+  fi
+  "$DIG" @127.0.0.1 -p "$PROBE_PORT" "$LIVE_NAME" A +short +time=2 +tries=1 2>/dev/null | grep -q . ||
+    emit "PREFLIGHT WARN  liveness name '$LIVE_NAME' returns nothing; is it in /etc/hosts and use-hosts true?"
+  return $problems
+}
+
+# Success only on a bare address line. `grep -q 'status:'` passes on SERVFAIL,
+# and a non-empty check always passes: dig writes ";; connection timed out" to
+# STDOUT (exit 9).
+answered() {
+  "$DIG" @127.0.0.1 -p "$PROBE_PORT" "$1" A +short +time="$2" +tries=1 2>/dev/null |
+    grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}$|^[0-9a-fA-F:]+:[0-9a-fA-F:]*$'
+}
+probe_live() { answered "$LIVE_NAME" "$TIMEOUT"; }
+probe_net() { answered "$NET_NAME" 3; }
+
+online() { route -n get default >/dev/null 2>&1; }
+
+# Absent plist means deliberately stopped (Raycast toggle, `nextdns uninstall`);
+# restarting in a loop would fight the user.
+service_installed() { [[ -f "$PLIST" ]]; }
+service_running() { [[ "$(sudo -n "$CTL_BIN" status 2>/dev/null)" == "running" ]]; }
+
+context() {
+  local pid age tstate net
+  pid=$(daemon_pid)
+  if [[ -n "$pid" ]]; then age=$(ps -o etime= -p "$pid" 2>/dev/null | tr -d ' '); else pid=NONE age=-; fi
+  [[ -x "$TS_BIN" ]] && "$TS_BIN" status >/dev/null 2>&1 && tstate=up || tstate=down
+  online && net=up || net=offline
+  printf 'pid=%s age=%s net=%s tsapp=%s' "$pid" "$age" "$net" "$tstate"
+}
+
+# Captured BEFORE healing: a restart destroys the only evidence.
+capture_diag() {
+  local tag="$1" pid stamp out
+  pid=$(daemon_pid)
+  stamp=$(date '+%Y%m%d-%H%M%S')
+  out="$DIAG_DIR/${stamp}-${tag}.txt"
+  {
+    printf '# %s  tag=%s  %s\n' "$(ts)" "$tag" "$(context)"
+    printf '# daemon=%s  ctl=%s\n\n' "${DAEMON_BIN:-NONE}" "${CTL_BIN:-NONE}"
+    printf '## probes\n'
+    printf 'liveness (%s, /etc/hosts): %s\n' "$LIVE_NAME" "$(probe_live && echo OK || echo FAIL)"
+    printf 'upstream (%s):            %s\n' "$NET_NAME" "$(probe_net && echo OK || echo FAIL)"
+    printf '\n## scutil resolver 0\n'
+    scutil --dns 2>/dev/null | sed -n '1,25p'
+    printf '\n## goroutine trace\n'
+    if [[ -z "$pid" ]]; then
+      echo "(no daemon process; nothing to trace)"
+    elif ! sudo -n "$CTL_BIN" trace 2>&1; then
+      echo "(trace FAILED; check sudoers grants '$CTL_BIN trace')"
+    fi
+  } >"$out" 2>&1
+
+  if ! grep -q '^goroutine ' "$out"; then
+    emit "DIAG  captured but NO TRACE; cause unknown | $out"
+  elif awk '/^goroutine /{st=$0} /udp\.go:6[0-9]/{if (st ~ /chan send/) f=1} END{exit !f}' "$out"; then
+    emit "DIAG  serveUDP parked on chan send -> INFLIGHT STARVATION | $out"
+  else
+    emit "DIAG  trace captured, no starvation signature | $out"
+  fi
+}
+
+state=healthy # healthy | wedged | upstream | stopped
+fails=0
+down_since=""
+heals=0
+last_heal=0
+last_note=0
+last_tick=$(now)
+
+emit "watch start | daemon=${DAEMON_BIN:-NONE} ctl=${CTL_BIN:-NONE} live=$LIVE_NAME net=$NET_NAME pid=$$ | $(context)"
+preflight || emit "PREFLIGHT  completed with problems (see above)"
+
+while true; do
+  sleep "$INTERVAL"
+
+  # A clock jump is a sleep/wake; probes fail for a moment while the stack returns.
+  tick=$(now)
+  if ((tick - last_tick > INTERVAL * 3)); then
+    grace_until=$((tick + WAKE_GRACE))
+    emit "WAKE  resumed after $((tick - last_tick))s gap; ignoring probes for ${WAKE_GRACE}s | $(context)"
+    state=healthy fails=0
+  fi
+  last_tick=$tick
+  ((tick < ${grace_until:-0})) && continue
+
+  if probe_live; then
+    if [[ "$state" == wedged ]]; then
+      emit "UP    listener recovered (wedged since $down_since, $heals heal(s)) | $(context)"
+    fi
+    if probe_net; then
+      [[ "$state" == upstream ]] && emit "UP    upstream reachable again | $(context)"
+      state=healthy
+    elif [[ "$state" != upstream ]]; then
+      state=upstream
+      last_note=$tick
+      emit "NET   listener OK, upstream unreachable; NOT restarting (this is the network, not NextDNS) | $(context)"
+    elif ((tick - last_note >= QUIET_HEARTBEAT)); then
+      last_note=$tick
+      emit "NET   still upstream-only failure | $(context)"
+    fi
+    fails=0 heals=0
+    continue
+  fi
+
+  ((fails++))
+  ((fails < FAIL_THRESHOLD)) && continue
+
+  if ! service_installed; then
+    if [[ "$state" != stopped ]]; then
+      state=stopped
+      last_note=$tick
+      emit "STOP  no launchd job at $PLIST; NextDNS is deliberately uninstalled; standing down | $(context)"
+    elif ((tick - last_note >= QUIET_HEARTBEAT)); then
+      last_note=$tick
+      emit "STOP  still uninstalled | $(context)"
+    fi
+    continue
+  fi
+
+  if [[ "$state" != wedged ]]; then
+    state=wedged
+    down_since=$(ts)
+    heals=0
+    emit "WEDGED 127.0.0.1 not answering $LIVE_NAME from /etc/hosts ($fails consecutive) | $(context)"
+    capture_diag wedged
+  fi
+
+  if ((heals >= MAX_HEALS)); then
+    if ((tick - last_note >= QUIET_HEARTBEAT)); then
+      last_note=$tick
+      emit "STUCK $MAX_HEALS restarts did not recover it; still watching | $(context)"
+    fi
+    continue
+  fi
+  ((tick - last_heal < HEAL_COOLDOWN)) && continue
+
+  ((heals++))
+  pid_before=$(daemon_pid)
+  emit "HEAL  restart #$heals -> sudo $CTL_BIN restart | $(context)"
+  if sudo -n "$CTL_BIN" restart >/dev/null 2>&1; then
+    # Exit status says nothing about whether the daemon came back; verify the pid.
+    sleep 2
+    pid_after=$(daemon_pid)
+    if [[ -z "$pid_after" ]]; then
+      emit "HEAL  restart #$heals issued, but NO DAEMON PROCESS after 2s"
+    elif [[ "$pid_after" == "$pid_before" ]]; then
+      emit "HEAL  restart #$heals issued, but pid UNCHANGED ($pid_after); restart did not take"
+    elif probe_live; then
+      emit "HEAL  restart #$heals VERIFIED (pid ${pid_before:-NONE} -> $pid_after, listener answering)"
+    else
+      emit "HEAL  restart #$heals respawned (pid ${pid_before:-NONE} -> $pid_after) but still not answering"
+    fi
+  else
+    emit "HEAL  restart #$heals FAILED (sudo denied or nextdns error); check sudoers for '$CTL_BIN restart'"
+  fi
+  last_heal=$tick
+done

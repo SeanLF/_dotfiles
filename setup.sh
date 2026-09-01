@@ -237,6 +237,7 @@ setup_symlinks() {
   symlink_with_diff "$DOTFILES_DIR/.config/ghostty/config" "$HOME/.config/ghostty/config"
   symlink_with_diff "$DOTFILES_DIR/.config/mise/config.toml" "$HOME/.config/mise/config.toml"
   symlink_with_diff "$DOTFILES_DIR/.config/zed/settings.json" "$HOME/.config/zed/settings.json"
+  symlink_with_diff "$DOTFILES_DIR/.config/ccl/models.ini" "$HOME/.config/ccl/models.ini"
   symlink_with_diff "$DOTFILES_DIR/.claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
   symlink_with_diff "$DOTFILES_DIR/writing-style.md" "$HOME/.claude/writing-style.md"
   # AGENTS.md is the cross-CLI canonical; Antigravity reads it via the

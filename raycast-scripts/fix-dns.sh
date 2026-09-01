@@ -17,15 +17,21 @@
 DIR="$(dirname "$0")/.."
 fixes=()
 
+# Never hardcode the binary: `activate` rewrites /etc/nextdns.conf from the flags it knows.
+NEXTDNS=$("$DIR/bin/nextdns-bin") || {
+  echo "NextDNS binary not found"
+  exit 1
+}
+
 # Ensure NextDNS daemon is running
 if ! dig @127.0.0.1 example.com +short +time=1 +tries=1 &>/dev/null; then
-  sudo /opt/homebrew/bin/nextdns restart &>/dev/null
+  sudo "$NEXTDNS" restart &>/dev/null
   fixes+=("restarted NextDNS")
 fi
 
 # Ensure 127.0.0.1 is the system resolver
 if ! scutil --dns 2>/dev/null | grep -q "127.0.0.1"; then
-  sudo /opt/homebrew/bin/nextdns activate &>/dev/null
+  sudo "$NEXTDNS" activate &>/dev/null
   fixes+=("activated NextDNS")
 fi
 
