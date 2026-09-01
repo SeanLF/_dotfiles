@@ -6,7 +6,7 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 # happily *execute* scripts like `bin/maint` instead of passing them as arguments.
 # Using `xargs` keeps things literal and lazy-evaluated.
 
-shell_pathspec := "'*.sh' '*.bash' 'bin/' ':!:bin/nextdns-configure'"
+shell_pathspec := "'*.sh' '*.bash' 'bin/' ':!:bin/nextdns-configure' ':!:bin/cache-meter'"
 
 # Default: show available recipes
 _default:
@@ -16,7 +16,7 @@ _default:
 lint:
     git ls-files -z -- {{shell_pathspec}}   | xargs -0 mise x -- shellcheck
     git ls-files -z -- {{shell_pathspec}}   | xargs -0 mise x -- shfmt -d -i 2 -ci
-    mise x -- ruff check bin/nextdns-configure
+    mise x -- ruff check bin/nextdns-configure bin/cache-meter
     git ls-files -z -- '*.toml'             | xargs -0 mise x -- taplo fmt --check
     # prettier 3.1.0+ hard-errors on explicitly-passed symlinks (glob-expanded ones it skips
     # silently); drop symlinked tracked files so linked skills don't fail the check.
@@ -41,7 +41,7 @@ check: lint test dry-run
 # Auto-fix everything that has an auto-fixer. Leaves the repo lint-clean.
 fmt:
     git ls-files -z -- {{shell_pathspec}}   | xargs -0 mise x -- shfmt -w -i 2 -ci
-    mise x -- ruff check --fix bin/nextdns-configure
+    mise x -- ruff check --fix bin/nextdns-configure bin/cache-meter
     git ls-files -z -- '*.toml'             | xargs -0 mise x -- taplo fmt
     git ls-files -z -- '*.md' '*.json' '*.yml' '*.yaml' | xargs -0 mise x -- prettier --write
 
