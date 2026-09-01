@@ -12,8 +12,8 @@
 # Files in the common git dir:
 #   claude-review             hashes of what the last reviewer saw
 #   claude-reviewed-commits   one sha per line, commits a reviewer has seen
-#   claude-pending-review     sha of a Claude commit awaiting review
-#   claude-staged-reviewed    pre-commit found the staged content reviewed
+#   claude-pending-review     sha of a Claude commit awaiting review (per worktree)
+#   claude-staged-reviewed    pre-commit found the staged content reviewed (per worktree)
 #   claude-review-force       escape hatch, consumed by whichever gate meets it
 set -uo pipefail
 
@@ -36,7 +36,9 @@ range_base() { # $1 = local commit, $2 = remote sha or empty
   if up=$(git rev-parse -q --verify '@{upstream}' 2>/dev/null); then
     git merge-base "$up" "$1" 2>/dev/null && return
   fi
-  for b in origin/HEAD origin/main origin/master main master; do
+  # Remote-tracking refs only: a local main IS the branch being pushed, and
+  # its merge-base with itself made the first push of a repo hash empty.
+  for b in origin/HEAD origin/main origin/master; do
     git merge-base "$b" "$1" 2>/dev/null && return
   done
   git hash-object -t tree /dev/null
@@ -72,8 +74,8 @@ fi
 
 ARTIFACT="$COMMON_DIR/claude-review"
 STAMPS="$COMMON_DIR/claude-reviewed-commits"
-PENDING="$COMMON_DIR/claude-pending-review"
-STAGED_OK="$COMMON_DIR/claude-staged-reviewed"
+PENDING="$PRIVATE_DIR/claude-pending-review"
+STAGED_OK="$PRIVATE_DIR/claude-staged-reviewed"
 FORCE="$COMMON_DIR/claude-review-force"
 recorded() { sed -n "s/^$1=//p" "$ARTIFACT" 2>/dev/null; }
 stamped() { grep -qx "$1" "$STAMPS" 2>/dev/null; }

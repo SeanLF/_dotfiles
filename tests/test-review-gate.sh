@@ -133,7 +133,10 @@ run_cases() {
   hatch
   echo "trivial" >>file.txt && git add -A && commit >/dev/null
   check "a hatched commit is not pending" "$(pending)" 0
-  check "the hatch is still there for the push" "$(push)" 0
+  echo "trivial-next" >>file.txt && git add -A && commit >/dev/null
+  check "the hatch was consumed by that commit, so the next one is pending" "$(pending)" 1
+  review pr-review-toolkit:code-reviewer
+  check "the push accepts the stamped commits" "$(push)" 0
 
   # The hatch touched AFTER an unreviewed commit clears pending and stamps it.
   echo "trivial2" >>file.txt && git add -A && commit >/dev/null
@@ -141,6 +144,18 @@ run_cases() {
   hatch
   check "touching the hatch afterwards clears pending" "$(pending)" 0
   check "and the push accepts the stamped commit" "$(push)" 0
+
+  # Bash writes are edits too; scratch writes are not.
+  echo "bashwrite" >>file.txt && git add -A && commit >/dev/null
+  check "the guard refuses sed -i while HEAD is pending" "$(guard Bash 'sed -i "" -e s/a/b/ file.txt')" deny
+  check "the guard refuses a redirect into the tree while pending" "$(guard Bash 'echo x > file.txt')" deny
+  check "the guard refuses a heredoc into the tree while pending" "$(guard Bash 'cat > file.txt <<EOF2
+x
+EOF2')" deny
+  check "the guard allows a redirect into /tmp while pending" "$(guard Bash 'echo x > /tmp/scratch.txt')" allow
+  check "the guard allows a read while pending" "$(guard Bash 'rg -n foo file.txt')" allow
+  review pr-review-toolkit:code-reviewer
+  push >/dev/null
 
   # A human commit on top of a pending Claude commit moves HEAD; the guard keys on HEAD.
   echo "claude again" >>file.txt && git add -A && commit >/dev/null
@@ -196,7 +211,9 @@ run_cases() {
   check "force hatch is one-shot" "$(push)" 1
   hatch
   echo "z3" >>file.txt && git add -A && commit >/dev/null
-  check "hatch survives an intervening commit" "$(push)" 0
+  check "a hatch covers the commit it met, not the earlier unreviewed one" "$(push)" 1
+  review pr-review-toolkit:code-reviewer
+  check "reviewing the range then passes" "$(push)" 0
 
   # A review covers what was there when it ran, not what came after.
   echo "p1" >>file.txt && git add -A && commit >/dev/null
@@ -247,6 +264,33 @@ run_cases() {
   review pr-review-toolkit:code-reviewer
   check "a review of a clean pushed tree records nothing" \
     "$([ -f "$(git rev-parse --git-common-dir)/claude-review" ] && echo present || echo absent)" absent
+
+  # Pending is per worktree: a commit in one must not clear the other's.
+  git worktree add -q "$SANDBOX/wt2" -b wt2-branch >/dev/null 2>&1
+  echo "main pending" >>file.txt && git add -A && commit >/dev/null
+  (
+    cd "$SANDBOX/wt2" || exit 1
+    echo "wt2 change" >>file.txt && git add -A
+    git commit -qm "feat: in wt2" >/dev/null 2>&1
+  )
+  check "a commit in another worktree leaves this one pending" "$(pending)" 1
+  review pr-review-toolkit:code-reviewer
+  push >/dev/null
+  git worktree remove --force "$SANDBOX/wt2" >/dev/null 2>&1
+  git branch -qD wt2-branch >/dev/null 2>&1
+
+  # The first push of a repo with no remote-tracking refs carries everything.
+  local first
+  first=$(mktemp -d)
+  (
+    git init -q -b main "$first" && cd "$first" || exit 1
+    git config user.email t@t && git config user.name t
+    echo one >a.txt && git add -A && git commit -qm "chore: base"
+    echo two >>a.txt && git add -A && git commit -qm "feat: more"
+    CLAUDECODE=1 "$ROOT/bin/review-gate" --push "$(git rev-parse HEAD)" 0000000000000000000000000000000000000000 >/dev/null 2>&1
+  )
+  check "the first push of main with no remote refs is gated" "$?" 1
+  rm -rf "$first"
 
   # A LINKED WORKTREE, end to end: git exports GIT_DIR into hooks only there.
   git worktree add -q "$SANDBOX/wt" -b wt-branch >/dev/null 2>&1
@@ -380,7 +424,10 @@ bypass_cases() {
     'git push --dry-run origin main' \
     'cat .git/claude-pending-review' \
     'rg claude-pending-review bin/' \
-    'touch .git/claude-review-force'; do
+    'touch .git/claude-review-force' \
+    'rm -rf build && rg -n claude-pending-review bin/' \
+    'cp a.txt b.txt && cat .git/claude-review' \
+    'mv old.log new.log; rg claude-reviewed-commits docs/'; do
     check "allowed: $c" "$(verdict "$c")" allow
   done
 }

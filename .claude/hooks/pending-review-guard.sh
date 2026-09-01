@@ -18,7 +18,15 @@ case "$TOOL" in
   Bash)
     COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null) || exit 0
     [ -n "$COMMAND" ] || exit 0
-    is_git_commit "$(printf '%s' "$COMMAND" | strip_quotes)" || exit 0
+    STRIPPED=$(printf '%s' "$COMMAND" | strip_quotes)
+    # A commit, or a write into the tree by any of the usual shell shapes.
+    # Redirects into /tmp and /dev/null are scratch, not edits.
+    if ! is_git_commit "$STRIPPED" &&
+      ! printf '%s' "$STRIPPED" | grep -qE '(^|[[:space:]])(sed|perl|ruby)[[:space:]]+(-[a-zA-Z]*i|--in-place)|(^|[;&|][[:space:]]*)[[:space:]]*(tee|patch|install|truncate)([[:space:]]|$)|git[[:space:]]+apply' &&
+      ! printf '%s' "$COMMAND" | grep -qE '>>?[[:space:]]*"?(\$|[^[:space:]"/])' &&
+      ! printf '%s' "$COMMAND" | grep -qE '>>?[[:space:]]*"?/(Users|Volumes|opt|etc|usr)'; then
+      exit 0
+    fi
     ;;
   Edit | Write | MultiEdit | NotebookEdit)
     FILE=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty' 2>/dev/null)

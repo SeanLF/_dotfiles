@@ -113,17 +113,6 @@ while IFS= read -r seg; do
     deny "Changing the mode on review-gate, record-review or pending-review-guard disables the gate silently. ${HATCH}"
   fi
 
-  # The gate's state files: deleting the pending marker or forging a stamp is
-  # the same as skipping the review. Tested on the RAW command, because the
-  # path is usually quoted ("$(git rev-parse ...)/claude-pending-review") and
-  # strip_quotes would hide it.
-  if seg_command_is "$seg" 'rm|unlink|truncate|tee|cp|mv|dd' && printf '%s' "$COMMAND" | grep -qE 'claude-(pending-review|reviewed-commits|review|staged-reviewed)([^-a-z]|$)'; then
-    deny "That is a review-gate state file. ${HATCH}"
-  fi
-  if printf '%s' "$COMMAND" | grep -qE '>>?[[:space:]]*"?[^[:space:]"]*claude-(pending-review|reviewed-commits|review|staged-reviewed)"?([[:space:]]|$)'; then
-    deny "Writing a review-gate state file forges a review. ${HATCH}"
-  fi
-
   # -n means --no-verify on commit, but --dry-run on push, so this is
   # commit-only. Matches bundled short flags too: `git commit -nm "msg"`.
   # Per-segment matters most here: `rg -n TODO && git commit -m x` was denied,
@@ -134,6 +123,28 @@ while IFS= read -r seg; do
   fi
 done <<EOF
 $SEGMENTS
+EOF
+
+# The gate's state files: deleting the pending marker or forging a stamp is the
+# same as skipping the review. Judged on RAW segments, because the path is
+# usually quoted ("$(git rev-parse ...)/claude-pending-review") and strip_quotes
+# would hide it; per segment, so `rm -rf build && rg claude-review bin/` stays a
+# search.
+RAW_SEGMENTS=$(printf '%s' "$COMMAND" |
+  awk '{ if (sub(/\\$/, "")) printf "%s", $0; else print }' |
+  sed -E 's/(\|\||&&|[;&|])/\
+/g')
+STATE='claude-(pending-review|reviewed-commits|review|staged-reviewed)'
+while IFS= read -r seg; do
+  [ -z "$seg" ] && continue
+  if seg_command_is "$seg" 'rm|unlink|truncate|tee|cp|mv|dd' && printf '%s' "$seg" | grep -qE "${STATE}([^-a-z]|\$)"; then
+    deny "That is a review-gate state file. ${HATCH}"
+  fi
+  if printf '%s' "$seg" | grep -qE ">>?[[:space:]]*\"?[^[:space:]\"]*${STATE}\"?([[:space:]]|\$)"; then
+    deny "Writing a review-gate state file forges a review. ${HATCH}"
+  fi
+done <<EOF
+$RAW_SEGMENTS
 EOF
 
 exit 0
