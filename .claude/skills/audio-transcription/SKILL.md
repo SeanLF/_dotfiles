@@ -41,6 +41,10 @@ Transcribe an audio file locally — no cloud, no API. Tested on Apple Silicon. 
 
 ## Gotchas
 
+- **Whisper early stop:** a note that opens with a short greeting ("Yo Sean !") can come back as _only_ that
+  greeting, with the remaining 25s silently dropped, and relaxing `--no-speech-threshold` does not fix it. Compare
+  the output span to `afinfo` duration; if short, re-run on the audio minus the first ~2s
+  (`ffmpeg -ss 2 -i in.wav tail.wav`) and prepend the greeting by hand. Seen 2026-09-01 on a WhatsApp `.opus`.
 - **Whisper end-hallucination:** Whisper often emits a repeated phrase with timestamps _past the real audio end_ (e.g. a 60s clip showing "…" at 01:01). Drop anything beyond the true duration from `afinfo`.
 - **Low-confidence words:** flag proper nouns / names / company names as uncertain rather than asserting them — confirm against context the user has.
 - **Disk:** the MLX/HF model weights are large (~1.5GB Whisper turbo, ~2.3GB Parakeet) plus uv deps. After a one-off job, reclaim with `uv cache prune` and delete unwanted weights under `~/.cache/huggingface/hub/`. Re-runs reuse the cache (no re-download).
