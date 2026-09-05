@@ -3,6 +3,7 @@
   "permissions": {
     "defaultMode": "auto"
   },
+  "model": "fable",
   "disableClaudeAiConnectors": true,
   "hooks": {
     "UserPromptSubmit": [
@@ -155,6 +156,5 @@
   "inputNeededNotifEnabled": false,
   "agentPushNotifEnabled": true,
   "skipAutoPermissionPrompt": true,
-  "voiceEnabled": true,
-  "model": "claude-fable-5-1[1m]"
+  "voiceEnabled": true
 }
