@@ -111,9 +111,10 @@ step_appstore() {
   fi
 }
 
-# Xcode (managed by xcodes). Betas churn fast, so if you already run a beta we
-# auto-upgrade it to the latest prerelease. Stable is report-only — you keep a
-# stable Xcode alongside the beta and install new stables deliberately.
+# Xcode betas (managed by xcodes). Stable Xcode is the App Store copy: it
+# carries a receipt, `mas upgrade` above keeps it current and the Brewfile
+# lists it as `mas "Xcode"`. Betas churn fast, so if you already run a beta we
+# auto-upgrade it to the latest prerelease. Stable is report-only here.
 # `xcodes list` prints ascending and marks installed versions "(Installed)", so
 # the last "Beta" line is the newest prerelease and tells us if we're already on
 # it (cheap guard against a needless multi-GB re-download).

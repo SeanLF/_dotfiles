@@ -146,6 +146,7 @@ mas "Consent-O-Matic", id: 1606897889
 mas "Flighty", id: 1358823008
 mas "TestFlight", id: 899247664
 mas "WhatsApp", id: 310633997
+mas "Xcode", id: 497799835
 go "cmd/go"
 go "cmd/gofmt"
 cargo "cargo-cyclonedx"
