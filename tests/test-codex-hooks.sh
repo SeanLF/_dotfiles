@@ -26,7 +26,14 @@ no() {
 }
 check() { if [ "$2" = "$3" ]; then ok "$1"; else no "$1 (want $3, got $2)"; fi; }
 
-expand() { printf '%s' "${1/#\~/$HOME}"; }
+# The manifest names the installed paths. Resolve them into THIS checkout, so a
+# worktree tests its own hooks rather than whatever ~/.claude/hooks points at.
+expand() {
+  local p="$1"
+  p="${p/#\~\/.claude\/hooks\//$ROOT/.claude/hooks/}"
+  p="${p/#\~\/Developer\/_dotfiles\//$ROOT/}"
+  printf '%s' "${p/#\~/$HOME}"
+}
 
 echo "=== manifest ==="
 check "hooks.json is valid JSON" "$(jq -e . "$CODEX" >/dev/null 2>&1 && echo yes || echo no)" yes

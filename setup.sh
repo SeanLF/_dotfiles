@@ -272,8 +272,9 @@ setup_symlinks() {
 # hash of its definition, so a fresh hooks.json is inert until that runs once.
 setup_codex() {
   local tool="$DOTFILES_DIR/bin/codex-config" out rc
-  out=$("$tool" --check 2>&1)
-  rc=$?
+  # A bare assignment inherits the substitution's exit status, and this script
+  # runs under set -e, so the test position is the only place --check can fail.
+  if out=$("$tool" --check 2>&1); then rc=0; else rc=$?; fi
   case "$rc" in
     0) info "codex config: no drift" ;;
     1)
