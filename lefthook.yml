@@ -8,6 +8,7 @@ pre-commit:
       exclude:
         - "bin/nextdns-configure" # python
         - "bin/cache-meter" # python
+        - "bin/codex-config" # python
       run: mise x -- shellcheck {staged_files}
     shfmt:
       glob:
@@ -17,12 +18,14 @@ pre-commit:
       exclude:
         - "bin/nextdns-configure" # python
         - "bin/cache-meter" # python
+        - "bin/codex-config" # python
       run: mise x -- shfmt -d -i 2 -ci {staged_files}
     ruff:
       glob:
         - "*.py"
         - "bin/nextdns-configure"
         - "bin/cache-meter"
+        - "bin/codex-config"
       run: mise x -- ruff check {staged_files}
     taplo:
       glob: "*.toml"

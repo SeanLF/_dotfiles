@@ -1,6 +1,7 @@
 #!/bin/bash
-# Review gate for Claude-made changes. Keys on CLAUDECODE: a speed bump for an
-# honest agent, not a boundary.
+# Review gate for agent-made changes. Keys on the marker each harness puts in
+# its shell environment (CLAUDECODE=1 for Claude Code, CODEX_THREAD_ID for
+# Codex): a speed bump for an honest agent, not a boundary.
 #
 #   review-gate                        pre-commit: advisory, always exits 0
 #   review-gate --pending              exit 1 while HEAD is a Claude commit no
@@ -19,6 +20,8 @@ set -uo pipefail
 
 # Never name a variable GIT_DIR: git exports it into hooks inside a linked
 # worktree, and assigning it repoints every later git call.
+
+agent_session() { [ "${CLAUDECODE:-}" = "1" ] || [ -n "${CODEX_THREAD_ID:-}" ]; }
 
 # No HEAD before the first commit; `git diff HEAD` fatals but still hashes empty input.
 diff_base() {
@@ -89,6 +92,7 @@ Running any ONE of these clears the gate (exact subagent_type, the prefix matter
   code-simplifier:code-simplifier
   feature-dev:code-reviewer                 <- Sonnet; the cheap per-commit tier
   adversarial-reviewer                      <- refutes rather than confirms; worth running last
+  reviewer                                  <- Codex: spawn_agent with agent_type "reviewer"
 
 EOF
 }
@@ -115,7 +119,7 @@ fi
 
 # ---- pre-push gate ----------------------------------------------------------
 if [ "${1:-}" = "--push" ]; then
-  [ "${CLAUDECODE:-}" = "1" ] || exit 0
+  agent_session || exit 0
   local_sha="${2:-}"
   remote_sha="${3:-}"
   case "$remote_sha" in *[!0]*) ;; *) remote_sha="" ;; esac # all zeros: new ref
@@ -154,7 +158,7 @@ if [ "${1:-}" = "--push" ]; then
 fi
 
 # ---- pre-commit (advisory) --------------------------------------------------
-[ "${CLAUDECODE:-}" = "1" ] || exit 0
+agent_session || exit 0
 rm -f "$STAGED_OK"
 for state in CHERRY_PICK_HEAD REVERT_HEAD MERGE_HEAD rebase-merge rebase-apply; do
   [ -e "$PRIVATE_DIR/$state" ] && exit 0

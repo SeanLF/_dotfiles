@@ -64,3 +64,21 @@ small commits reviewed as they land.
 - obra/superpowers, automazeio/ccpm, awesome-claude-code-hooks: none gate per edit.
 - Brodzinski 2026-07-14 on 3x PR size under agents; SmartBear/Cisco review size curve.
 - Willison 2026-08-22, Osmani 2026-06-15, Cherny (YC 2026): verification upstream of review.
+
+## 2026-09-05: the same gate under Codex
+
+The gate keys on the marker each harness exports into its tool shell:
+`CLAUDECODE=1` for Claude Code, `CODEX_THREAD_ID` for Codex (verified by asking
+`codex exec` 0.153.2 to print its environment). `.codex/hooks.json` mirrors the
+PreToolUse guards in `.claude/settings.json`; Codex sends the same JSON field
+names and honours the same deny shape (payloads captured 2026-09-05). Codex edits
+through `apply_patch`, which the pending guard treats as an edit in cwd. The
+Codex reviewer is the `reviewer` role in `.codex/agents/reviewer.toml`, pinned to
+a model; `record-review` recognises it by `agent_type` on SubagentStop.
+
+Codex refuses a hook until `/hooks` has recorded trust once. Trust is a hash of
+the handler definition, not the script, so editing a script keeps trust and
+editing `hooks.json` drops it; `setup.sh --dry-run` reports handlers with no
+recorded trust. `tests/test-codex-hooks.sh` fails if the two manifests drift, and
+`tests/test-review-gate.sh` runs every flow case a second time under the Codex
+marker. Not mirrored: `rtk` (no Codex processor) and the ccpool pool warnings.

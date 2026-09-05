@@ -81,6 +81,11 @@ CASES = [
     (B, "git config --local core.hooksPath .githooks", "deny", "writing hooksPath is"),
     (B, "CLAUDECODE=1 git commit -m 'feat(x): y'", "allow", "setting the value it already has"),
     (B, "CLAUDECODE=0 git commit -m 'feat(x): y'", "deny", "turning the gate off"),
+    # Codex's marker has no fixed value, so every assignment or clearing is a bypass.
+    (B, "CODEX_THREAD_ID= git commit -m 'feat(x): y'", "deny", "clearing the Codex marker"),
+    (B, "env -u CODEX_THREAD_ID git commit -m 'feat(x): y'", "deny", "env -u on the Codex marker"),
+    (B, "unset CODEX_THREAD_ID; git commit -m 'feat(x): y'", "deny", "unset on the Codex marker"),
+    (B, "rg CODEX_THREAD_ID bin/", "allow", "searching for the Codex marker"),
 ]
 
 fails = 0

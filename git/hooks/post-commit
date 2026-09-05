@@ -1,10 +1,11 @@
 #!/bin/bash
-# Global post-commit: marks a Claude commit as awaiting review, then hands off
-# to lefthook. See pre-commit for the trust boundary.
+# Global post-commit: marks an agent commit as awaiting review, then hands off
+# to lefthook. See pre-commit for the trust boundary. The markers are the ones
+# bin/review-gate keys on: CLAUDECODE=1 (Claude Code) or CODEX_THREAD_ID (Codex).
 set -euo pipefail
 
 # Not named GIT_DIR: git exports that into hooks inside a linked worktree.
-if [ "${CLAUDECODE:-}" = "1" ]; then
+if [ "${CLAUDECODE:-}" = "1" ] || [ -n "${CODEX_THREAD_ID:-}" ]; then
   COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null || true)
   PRIVATE_DIR=$(git rev-parse --git-dir 2>/dev/null || true)
   replaying=0

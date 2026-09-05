@@ -11,24 +11,26 @@ A few Homebrew entries (`bash`, `curl`, `less`, `perl`, `vim`) exist specificall
 
 ## What's Included
 
-| File                    | Purpose                                                                          |
-| ----------------------- | -------------------------------------------------------------------------------- |
-| `Brewfile`              | Homebrew packages, casks, App Store apps, uv-managed Python CLIs                 |
-| `.config/mise/`         | Runtime + CLI version management (ruby, python, node, most CLIs via aqua)        |
-| `.zshrc`                | Shell config (fzf history, starship prompt, zoxide)                              |
-| `aliases.zsh`           | Git aliases, docker shortcuts, utilities                                         |
-| `.gitconfig`            | Commit signing, delta diffs, sensible defaults                                   |
-| `.config/ghostty/`      | Terminal config                                                                  |
-| `.config/starship.toml` | Prompt theme                                                                     |
-| `.config/zed/`          | Zed editor settings                                                              |
-| `.claude/`              | Claude Code config: CLAUDE.md preferences, hooks, slash commands, writing style  |
-| `.ssh/config`           | SSH host config (1Password agent)                                                |
-| `bin/`                  | Small scripts: `maint`, `online`, `nextdns-configure`, `tailscale-search-domain` |
-| `raycast-scripts/`      | Raycast script commands (toggle/fix NextDNS) — point Raycast at this directory   |
-| `justfile`              | Dev tasks: `just check`, `just lint`, `just fmt`, `just dry-run`, `just deps`    |
-| `lefthook.yml`          | Git hooks: lint staged files pre-commit, run `just check` pre-push               |
-| `.editorconfig`         | Shared editor conventions (indentation, line endings, trailing whitespace)       |
-| `setup.sh`              | Idempotent bootstrap with drift detection; backs up clobbered files              |
+| File                    | Purpose                                                                                                                     |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `Brewfile`              | Homebrew packages, casks, App Store apps, uv-managed Python CLIs                                                            |
+| `.config/mise/`         | Runtime + CLI version management (ruby, python, node, most CLIs via aqua)                                                   |
+| `.zshrc`                | Shell config (fzf history, starship prompt, zoxide)                                                                         |
+| `aliases.zsh`           | Git aliases, docker shortcuts, utilities                                                                                    |
+| `.gitconfig`            | Commit signing, delta diffs, sensible defaults                                                                              |
+| `.config/ghostty/`      | Terminal config                                                                                                             |
+| `.config/starship.toml` | Prompt theme                                                                                                                |
+| `.config/zed/`          | Zed editor settings                                                                                                         |
+| `AGENTS.md`             | One instruction file for every agent CLI: Claude Code, Codex, Gemini, Antigravity                                           |
+| `.claude/`              | Claude Code config: settings, hooks, agents, skills, slash commands                                                         |
+| `.codex/`               | Codex config: tracked `config.toml` (rendered, not symlinked), `hooks.json` mirroring the Claude guards, agent roles, rules |
+| `.ssh/config`           | SSH host config (1Password agent)                                                                                           |
+| `bin/`                  | Small scripts: `maint`, `review-gate`, `codex-config`, `online`, `nextdns-configure`, `tailscale-search-domain`             |
+| `raycast-scripts/`      | Raycast script commands (toggle/fix NextDNS) — point Raycast at this directory                                              |
+| `justfile`              | Dev tasks: `just check`, `just lint`, `just fmt`, `just dry-run`, `just deps`                                               |
+| `lefthook.yml`          | Git hooks: lint staged files pre-commit, run `just check` pre-push                                                          |
+| `.editorconfig`         | Shared editor conventions (indentation, line endings, trailing whitespace)                                                  |
+| `setup.sh`              | Idempotent bootstrap with drift detection; backs up clobbered files                                                         |
 
 ## Installation
 

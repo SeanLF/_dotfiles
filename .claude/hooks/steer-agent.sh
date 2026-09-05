@@ -74,7 +74,7 @@ IFS=' ' read -r claude_pid tty_name <<<"$(
       p = start
       while (p > 1 && ++hops < 64) {
         name = comm[p]; sub(/.*\//, "", name)
-        if (name == "claude") { print p, tty[p]; exit }
+        if (name == "claude" || name == "codex") { print p, tty[p]; exit }
         if (!(p in ppid)) exit
         p = ppid[p]
       }

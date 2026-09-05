@@ -6,12 +6,31 @@
 # drives the cases the old PreToolUse gate got wrong. Case 0 unplugs the gate and
 # requires the assertions to fail: a harness that passes either way is measuring
 # nothing, and this one has already caught two bugs in its own subject.
+#
+# The flow cases run once per harness marker: CLAUDECODE=1 (Claude Code) and
+# CODEX_THREAD_ID (Codex). A commit or push with neither set is a human's.
 set -uo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 SANDBOX=$(mktemp -d)
 trap 'rm -rf "$SANDBOX"' EXIT
 PASS=0 FAIL=0 CONTROL_FAIL=0
+AGENT_MARKER=claude
+
+agent_on() {
+  case "$AGENT_MARKER" in
+    codex)
+      unset CLAUDECODE
+      export CODEX_THREAD_ID=01a0-test-thread
+      ;;
+    *)
+      unset CODEX_THREAD_ID
+      export CLAUDECODE=1
+      ;;
+  esac
+}
+agent_off() { unset CLAUDECODE CODEX_THREAD_ID; }
+human() { env -u CLAUDECODE -u CODEX_THREAD_ID "$@"; }
 
 ok() {
   PASS=$((PASS + 1))
@@ -37,11 +56,13 @@ pending() {
   "${REVIEW_GATE_BIN:-$ROOT/bin/review-gate}" --pending >/dev/null 2>&1
   echo $?
 }
-# The PreToolUse guard, fed the JSON Claude Code sends it. "allow" is no output.
+# The PreToolUse guard, fed the JSON Claude Code and Codex send it (same field
+# names; Codex names its edit tool apply_patch and puts the patch in
+# tool_input.command). "allow" is no output.
 guard() { # $1 tool, $2 file_path or command
   local out
-  if [ "$1" = Bash ]; then
-    out=$(jq -cn --arg c "$2" --arg d "$SANDBOX/repo" '{tool_name:"Bash",cwd:$d,tool_input:{command:$c}}' | "$ROOT/.claude/hooks/pending-review-guard.sh")
+  if [ "$1" = Bash ] || [ "$1" = apply_patch ]; then
+    out=$(jq -cn --arg t "$1" --arg c "$2" --arg d "$SANDBOX/repo" '{tool_name:$t,cwd:$d,tool_input:{command:$c}}' | "$ROOT/.claude/hooks/pending-review-guard.sh")
   else
     out=$(jq -cn --arg t "$1" --arg f "$2" --arg d "$SANDBOX/repo" '{tool_name:$t,cwd:$d,tool_input:{file_path:$f}}' | "$ROOT/.claude/hooks/pending-review-guard.sh")
   fi
@@ -83,11 +104,11 @@ EOF
 
   echo base >file.txt
   git add -A
-  env -u CLAUDECODE git commit -qm "chore: base"
+  human git commit -qm "chore: base"
   rm -rf "$SANDBOX/remote.git"
   git init -q --bare "$SANDBOX/remote.git"
   git remote add origin "$SANDBOX/remote.git"
-  env -u CLAUDECODE git push -qu origin HEAD >/dev/null 2>&1
+  human git push -qu origin HEAD >/dev/null 2>&1
   rm -f "$(git rev-parse --git-dir)/claude-review-force" "$(git rev-parse --git-dir)/claude-review"
 }
 
@@ -95,14 +116,19 @@ run_cases() {
   printf '\n%s\n' "$1"
 
   echo "human" >>file.txt && git add -A
-  env -u CLAUDECODE git commit -qm "feat: change" >/dev/null 2>&1
-  check "hand-typed push is untouched (CLAUDECODE unset)" "$(env -u CLAUDECODE bash -c 'git push -q origin HEAD >/dev/null 2>&1; echo $?')" 0
+  human git commit -qm "feat: change" >/dev/null 2>&1
+  check "hand-typed push is untouched (no agent marker)" "$(human bash -c 'git push -q origin HEAD >/dev/null 2>&1; echo $?')" 0
 
-  export CLAUDECODE=1
-  echo "claude" >>file.txt && git add -A
-  check "unreviewed Claude commit is allowed (advisory)" "$(commit)" 0
+  agent_on
+  echo "agent" >>file.txt && git add -A
+  check "unreviewed agent commit is allowed (advisory)" "$(commit)" 0
   check "that commit is now pending review" "$(pending)" 1
   check "the guard refuses an Edit while HEAD is pending" "$(guard Edit "$SANDBOX/repo/file.txt")" deny
+  check "the guard refuses an apply_patch while HEAD is pending" "$(guard apply_patch '*** Begin Patch
+*** Update File: file.txt
+@@
++x
+*** End Patch')" deny
   check "the guard refuses another commit while HEAD is pending" "$(guard Bash 'git commit -m "feat: on top"')" deny
   check "the guard leaves an edit outside the repo alone" "$(guard Edit "$SANDBOX/elsewhere.txt")" allow
   check "the guard leaves a non-commit Bash call alone" "$(guard Bash 'git status')" allow
@@ -111,7 +137,20 @@ run_cases() {
   review pr-review-toolkit:code-reviewer # clean tree, unpushed range
   check "a review of HEAD clears the pending state" "$(pending)" 0
   check "edits are allowed again" "$(guard Edit "$SANDBOX/repo/file.txt")" allow
+  check "apply_patch is allowed again" "$(guard apply_patch '*** Begin Patch
+*** Update File: file.txt
+@@
++x
+*** End Patch')" allow
   check "push after a review of the committed range passes" "$(push)" 0
+
+  # The Codex reviewer role clears the gate the way the Claude reviewers do.
+  echo "codex-reviewed" >>file.txt && git add -A && commit >/dev/null
+  check "a commit is pending before the Codex reviewer runs" "$(pending)" 1
+  printf '{"hook_event_name":"SubagentStop","agent_type":"reviewer","agent_id":"a1","cwd":"%s"}' "$SANDBOX/repo" |
+    "$ROOT/bin/record-review" >/dev/null 2>&1
+  check "a Codex SubagentStop for the reviewer role clears pending" "$(pending)" 0
+  check "and the push passes" "$(push)" 0
 
   # The in-flow cycle: commit, review that commit, commit, review, push. No
   # whole-range review ever runs; the per-commit stamps carry the push.
@@ -160,7 +199,7 @@ EOF2')" deny
   # A human commit on top of a pending Claude commit moves HEAD; the guard keys on HEAD.
   echo "claude again" >>file.txt && git add -A && commit >/dev/null
   echo "human on top" >>file.txt && git add -A
-  env -u CLAUDECODE git commit -qm "feat: human" >/dev/null 2>&1
+  human git commit -qm "feat: human" >/dev/null 2>&1
   check "a human commit on top unblocks editing" "$(pending)" 0
   review pr-review-toolkit:code-reviewer
   push >/dev/null
@@ -287,7 +326,7 @@ EOF2')" deny
     git config user.email t@t && git config user.name t
     echo one >a.txt && git add -A && git commit -qm "chore: base"
     echo two >>a.txt && git add -A && git commit -qm "feat: more"
-    CLAUDECODE=1 "$ROOT/bin/review-gate" --push "$(git rev-parse HEAD)" 0000000000000000000000000000000000000000 >/dev/null 2>&1
+    "$ROOT/bin/review-gate" --push "$(git rev-parse HEAD)" 0000000000000000000000000000000000000000 >/dev/null 2>&1
   )
   check "the first push of main with no remote refs is gated" "$?" 1
   rm -rf "$first"
@@ -309,7 +348,7 @@ EOF2')" deny
   git worktree remove --force "$SANDBOX/wt" >/dev/null 2>&1
   git branch -qD wt-branch >/dev/null 2>&1
 
-  unset CLAUDECODE
+  agent_off
 }
 
 # hook-bypass-guard.sh is the only thing standing between the gate and a model
@@ -365,6 +404,12 @@ bypass_cases() {
     'env -ui CLAUDECODE git commit -m x' \
     'env -iu REVIEW_GATE_BIN sh' \
     'sudo env -iu CLAUDECODE git commit -m x' \
+    'CODEX_THREAD_ID= git commit -m x' \
+    'CODEX_THREAD_ID=other git commit -m x' \
+    'env -u CODEX_THREAD_ID git commit -m x' \
+    'unset CODEX_THREAD_ID; git commit -m x' \
+    'export CODEX_THREAD_ID=; git commit -m x' \
+    'env CODEX_THREAD_ID= git commit -m x' \
     'git push --no-verify origin main' \
     'git push origin main --no-verify' \
     'rm .git/claude-pending-review' \
@@ -407,6 +452,9 @@ bypass_cases() {
     'rg -c core.hooksPath git bin' \
     'bat -p git/hooks/pre-commit && rg -c core.hooksPath git' \
     'rg env -u CLAUDECODE bin/' \
+    'rg CODEX_THREAD_ID bin/ .claude/hooks/' \
+    'printenv CODEX_THREAD_ID' \
+    'env printenv CODEX_THREAD_ID' \
     'git log -n 5 --grep commit' \
     'fd -e sh | xargs grep -n chmod' \
     'time git commit -m "feat: x"' \
@@ -447,7 +495,7 @@ roster_cases() {
     git config user.name t
     echo one >f.txt
     git add -A
-    env -u CLAUDECODE git commit -qm "chore: base"
+    human git commit -qm "chore: base"
     echo two >>f.txt
   )
   clears() {
@@ -483,7 +531,7 @@ mechanism_cases() {
     git config diff.mnemonicPrefix true # what this machine sets
     echo one >f.txt
     git add -A
-    env -u CLAUDECODE git commit -qm "chore: base"
+    human git commit -qm "chore: base"
     echo two >>f.txt
     git add -A
   )
@@ -545,10 +593,10 @@ CONTROL_FAIL=$FAIL
 PASS=0 FAIL=0
 
 echo
-echo "=== CASE 1: gate installed ==="
+echo "=== CASE 1: gate installed, Claude Code marker ==="
 build
 export REVIEW_GATE_BIN="$ROOT/bin/review-gate"
-run_cases "gate active"
+run_cases "gate active (CLAUDECODE=1)"
 
 printf '\n%s\n' "----------------------------------------"
 if [ "$CONTROL_FAIL" -eq 0 ]; then
@@ -556,6 +604,15 @@ if [ "$CONTROL_FAIL" -eq 0 ]; then
   exit 2
 fi
 GATE_PASS=$PASS GATE_FAIL=$FAIL
+PASS=0 FAIL=0
+
+echo
+echo "=== CASE 2: gate installed, Codex marker ==="
+AGENT_MARKER=codex
+build
+run_cases "gate active (CODEX_THREAD_ID set, CLAUDECODE unset)"
+CODEX_PASS=$PASS CODEX_FAIL=$FAIL
+AGENT_MARKER=claude
 PASS=0 FAIL=0
 bypass_cases
 BYPASS_PASS=$PASS BYPASS_FAIL=$FAIL
@@ -568,8 +625,9 @@ mechanism_cases
 
 printf '\n%s\n' "----------------------------------------"
 printf 'negative control: %d assertions failed, so absence is detectable\n' "$CONTROL_FAIL"
-printf 'gate installed:   %d passed, %d failed\n' "$GATE_PASS" "$GATE_FAIL"
+printf 'gate installed:   %d passed, %d failed  (Claude Code marker)\n' "$GATE_PASS" "$GATE_FAIL"
+printf 'gate installed:   %d passed, %d failed  (Codex marker)\n' "$CODEX_PASS" "$CODEX_FAIL"
 printf 'bypass guard:     %d passed, %d failed\n' "$BYPASS_PASS" "$BYPASS_FAIL"
 printf 'reviewer roster:  %d passed, %d failed\n' "$ROSTER_PASS" "$ROSTER_FAIL"
 printf 'mechanism:        %d passed, %d failed\n' "$PASS" "$FAIL"
-[ "$GATE_FAIL" -eq 0 ] && [ "$BYPASS_FAIL" -eq 0 ] && [ "$ROSTER_FAIL" -eq 0 ] && [ "$FAIL" -eq 0 ]
+[ "$GATE_FAIL" -eq 0 ] && [ "$CODEX_FAIL" -eq 0 ] && [ "$BYPASS_FAIL" -eq 0 ] && [ "$ROSTER_FAIL" -eq 0 ] && [ "$FAIL" -eq 0 ]

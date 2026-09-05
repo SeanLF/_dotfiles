@@ -3,7 +3,8 @@
 #
 # Wired to SubagentStop, not PostToolUse(Task): a backgrounded Agent call
 # returns at spawn, so PostToolUse would record before the reviewer read a file.
-# Records that a reviewer RAN, not that it approved.
+# Records that a reviewer RAN, not that it approved. Codex sends the same event
+# with agent_type set to the role name; `reviewer` is .codex/agents/reviewer.toml.
 set -uo pipefail
 
 command -v jq >/dev/null 2>&1 || exit 0
@@ -19,7 +20,8 @@ case "$AGENT" in
     pr-review-toolkit:code-simplifier | \
     pr-review-toolkit:silent-failure-hunter | \
     code-simplifier:code-simplifier | \
-    adversarial-reviewer) ;;
+    adversarial-reviewer | \
+    reviewer) ;;
   *) exit 0 ;;
 esac
 

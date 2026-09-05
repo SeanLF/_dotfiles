@@ -1,6 +1,7 @@
 #!/bin/bash
-# Refuse edits and further commits while HEAD is a Claude commit no reviewer
-# has seen (bin/review-gate --pending). Fails OPEN on its own errors.
+# Refuse edits and further commits while HEAD is an agent commit no reviewer
+# has seen (bin/review-gate --pending). Fails OPEN on its own errors. Reads the
+# PreToolUse JSON both Claude Code and Codex send (same field names).
 set -o pipefail
 # shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/hook-lib.sh"
@@ -32,6 +33,8 @@ case "$TOOL" in
     FILE=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty' 2>/dev/null)
     [ -n "$FILE" ] && DIR=$(dirname "$FILE")
     ;;
+  # Codex edits files through apply_patch; the patch names files relative to cwd.
+  apply_patch) ;;
   *) exit 0 ;;
 esac
 

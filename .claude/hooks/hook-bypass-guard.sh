@@ -92,6 +92,13 @@ while IFS= read -r seg; do
     deny "Setting CLAUDECODE to anything but 1 turns the review gate off. ${HATCH}"
   fi
 
+  # Codex's marker is CODEX_THREAD_ID, a thread id rather than a fixed value, so
+  # there is no "the value it already has" exemption: any assignment is a change.
+  if printf '%s' "$seg" | grep -qE '^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*CODEX_THREAD_ID[[:space:]]*=' ||
+    { seg_command_is "$seg" 'export|declare|typeset|setenv|env' && printf '%s' "$seg" | grep -qE 'CODEX_THREAD_ID[[:space:]]*='; }; then
+    deny "CODEX_THREAD_ID is what the review gate keys on under Codex, so setting it turns the gate off. ${HATCH}"
+  fi
+
   # `-u` alone is far too common to match bare: it is ripgrep's --unrestricted,
   # so `rg -u CLAUDECODE` (searching for the variable) was denied. Require the
   # clearing idioms themselves.
@@ -102,9 +109,9 @@ while IFS= read -r seg; do
   # anywhere in the bundle, not last: `-[a-zA-Z]*i` caught `env -ui` but let
   # `env -iu CLAUDECODE` through, which clears the environment just the same.
   if printf '%s' "$seg" | grep -qE '^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*REVIEW_GATE_BIN[[:space:]]*=' ||
-    (seg_command_is "$seg" env && printf '%s' "$seg" | grep -qE "(-u[[:space:]]+(CLAUDECODE|REVIEW_GATE_BIN)|(^|[[:space:]])env[[:space:]]+-[a-zA-Z]*i[a-zA-Z]*([[:space:]]|\$))") ||
-    (seg_command_is "$seg" unset && printf '%s' "$seg" | grep -qE '(CLAUDECODE|REVIEW_GATE_BIN)'); then
-    deny "CLAUDECODE and REVIEW_GATE_BIN are what the review gate keys on, so setting or clearing either turns the gate off. ${HATCH}"
+    (seg_command_is "$seg" env && printf '%s' "$seg" | grep -qE "(-u[[:space:]]+(CLAUDECODE|CODEX_THREAD_ID|REVIEW_GATE_BIN)|(^|[[:space:]])env[[:space:]]+-[a-zA-Z]*i[a-zA-Z]*([[:space:]]|\$))") ||
+    (seg_command_is "$seg" unset && printf '%s' "$seg" | grep -qE '(CLAUDECODE|CODEX_THREAD_ID|REVIEW_GATE_BIN)'); then
+    deny "CLAUDECODE, CODEX_THREAD_ID and REVIEW_GATE_BIN are what the review gate keys on, so setting or clearing any of them turns the gate off. ${HATCH}"
   fi
 
   # Making the gate non-executable makes pre-commit take its not-installed

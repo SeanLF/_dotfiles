@@ -26,7 +26,7 @@ backup() {
 # notably the `dns` module's privileged writes — is a fingerprint tap, not a
 # password. The one exception is touchid's own write, which needs one password
 # sudo (you can't TouchID your way into enabling TouchID).
-DEFAULT_MODULES=(core touchid brew symlinks tools ai_clis ssh dns)
+DEFAULT_MODULES=(core touchid brew symlinks codex tools ai_clis ssh dns)
 
 # Silent success, loud failure
 info() { echo "$1"; }
@@ -243,9 +243,10 @@ setup_symlinks() {
   # AGENTS.md is the cross-CLI canonical; Antigravity reads it via the
   # hardcoded ~/.gemini/GEMINI.md path (inherited from the Gemini CLI era).
   symlink_with_diff "$DOTFILES_DIR/AGENTS.md" "$HOME/.codex/AGENTS.md"
-  # config.toml stays untracked: codex auto-appends [projects."/path"] trust
-  # entries, leaking internal project names if it lived in a tracked repo.
+  # config.toml is rendered by the codex module, not symlinked: Codex writes
+  # project trust and hook trust hashes into it, and those stay out of the repo.
   symlink_with_diff "$DOTFILES_DIR/.codex/rules/default.rules" "$HOME/.codex/rules/default.rules"
+  symlink_with_diff "$DOTFILES_DIR/.codex/hooks.json" "$HOME/.codex/hooks.json"
   symlink_with_diff "$DOTFILES_DIR/AGENTS.md" "$HOME/.gemini/GEMINI.md"
   symlink_with_diff "$DOTFILES_DIR/.gemini/settings.json" "$HOME/.gemini/settings.json"
   symlink_with_diff "$DOTFILES_DIR/.playwright/cli.config.json" "$HOME/.playwright/cli.config.json"
@@ -259,8 +260,41 @@ setup_symlinks() {
   symlink_dir "$DOTFILES_DIR/.claude/commands" "$HOME/.claude/commands"
   symlink_dir "$DOTFILES_DIR/.claude/hooks" "$HOME/.claude/hooks"
   symlink_dir "$DOTFILES_DIR/.claude/skills" "$HOME/.claude/skills"
+  # Codex agent roles: every *.toml in the directory is a role.
+  symlink_dir "$DOTFILES_DIR/.codex/agents" "$HOME/.codex/agents"
 
   info "Symlinks: done"
+}
+
+# Module: Codex config. bin/codex-config owns every key in .codex/config.toml and
+# leaves the rest of ~/.codex/config.toml alone; see that file for the split.
+# Hook trust lives there too: Codex refuses a hook until /hooks has recorded a
+# hash of its definition, so a fresh hooks.json is inert until that runs once.
+setup_codex() {
+  local tool="$DOTFILES_DIR/bin/codex-config" out rc
+  out=$("$tool" --check 2>&1)
+  rc=$?
+  case "$rc" in
+    0) info "codex config: no drift" ;;
+    1)
+      drift "codex config differs from .codex/config.toml:"
+      printf '%s\n' "$out" | sed 's/^/  /'
+      $DRY_RUN || "$tool" --apply
+      ;;
+    *)
+      warn "codex-config failed (exit $rc): $out"
+      return 1
+      ;;
+  esac
+
+  # Only Codex can record trust (it hashes the handler definition from inside
+  # /hooks), so this is reported the same way in both modes.
+  if out=$("$tool" --hooks-trust 2>&1); then
+    info "codex hooks: trust recorded for every handler"
+  else
+    echo "DRIFT: codex hooks with no recorded trust; run /hooks inside codex once:"
+    printf '%s\n' "$out" | sed 's/^/  /'
+  fi
 }
 
 # Module: SSH (verify 1Password agent)
@@ -439,6 +473,7 @@ Modules:
   tools     Install mise-managed runtimes/CLIs and uv-managed Python tools
   ai_clis   Install Claude Code and Antigravity CLI (direct installers)
   symlinks  Create dotfile symlinks (with drift detection)
+  codex     Render ~/.codex/config.toml from .codex/config.toml; report untrusted hooks
   ssh       Verify 1Password SSH agent
   dns       NextDNS sudoers + Tailscale search domain plist
   macos     Apply macOS defaults (Finder, Dock, keyboard)
@@ -479,6 +514,7 @@ main() {
       tools) setup_tools ;;
       ai_clis) setup_ai_clis ;;
       symlinks) setup_symlinks ;;
+      codex) setup_codex ;;
       ssh) setup_ssh ;;
       dns) setup_dns ;;
       macos) setup_macos ;;
