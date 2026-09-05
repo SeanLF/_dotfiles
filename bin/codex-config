@@ -61,9 +61,6 @@ def load(path: Path) -> dict[str, Any]:
 
 
 # --- TOML emitter --------------------------------------------------------------
-# tomllib reads; nothing in the standard library writes. This covers the value
-# kinds a Codex config contains and refuses the rest, and every write is parsed
-# back and compared before it lands.
 
 
 def key(k: str) -> str:

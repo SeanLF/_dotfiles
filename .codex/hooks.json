@@ -1,5 +1,5 @@
 {
-  "description": "The Claude Code guards from .claude/settings.json; tests/test-codex-hooks.sh keeps the two equal.",
+  "description": "Claude Code guards, mirrored.",
   "hooks": {
     "PreToolUse": [
       {

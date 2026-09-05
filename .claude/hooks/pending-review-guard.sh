@@ -32,7 +32,6 @@ case "$TOOL" in
     FILE=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty' 2>/dev/null)
     [ -n "$FILE" ] && DIR=$(dirname "$FILE")
     ;;
-  # Codex edits files through apply_patch; the patch names files relative to cwd.
   apply_patch) ;;
   *) exit 0 ;;
 esac

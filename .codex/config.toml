@@ -1,6 +1,3 @@
-# Rendered into ~/.codex/config.toml by bin/codex-config, which owns only the
-# keys here. Never add [projects] or [hooks.state].
-
 model = "gpt-5.6-luna"
 approvals_reviewer = "user"
 model_reasoning_effort = "medium"

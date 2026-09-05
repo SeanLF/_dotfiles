@@ -23,7 +23,7 @@ LIVE="$T/config.toml"
 TRACKED="$T/tracked.toml"
 HOOKS="$T/hooks.json"
 run() { "$CC" "$@" --live "$LIVE" --tracked "$TRACKED" --hooks "$HOOKS" --backup-dir "$T/bak"; }
-py() { python3 -c "import tomllib; d = tomllib.load(open('$LIVE', 'rb')); print($1)"; }
+py() { python3 -c "import tomllib; d = tomllib.load(open('${LIVE_OVERRIDE:-$LIVE}', 'rb')); print($1)"; }
 
 cat >"$LIVE" <<'EOF'
 model = "old-model"
@@ -174,6 +174,44 @@ check "--hooks-trust exits 0 once every handler is trusted" "$(
   run --hooks-trust >/dev/null
   echo $?
 )" 0
+
+echo
+echo "=== setup.sh codex module ==="
+# Everything below runs against a throwaway CODEX_HOME and HOME.
+H="$T/home"
+mkdir -p "$H" "$T/codex"
+cp "$ROOT/.codex/hooks.json" "$T/codex/hooks.json"
+printf 'model = "stale"\n' >"$T/codex/config.toml"
+setup() { (cd "$ROOT" && HOME="$H" CODEX_HOME="$T/codex" ./"$1" "${@:2}" 2>&1); }
+
+out=$(setup setup.sh --dry-run codex)
+check "dry-run reports the drift" "$(printf '%s\n' "$out" | grep -c '^  model: tracked=')" 1
+check "dry-run reports the untrusted hooks" "$(printf '%s\n' "$out" | grep -c 'run /hooks')" 1
+check "dry-run reaches the end despite the drift" "$(printf '%s\n' "$out" | grep -c '^Done!$')" 1
+check "dry-run left the live file alone" "$(cat "$T/codex/config.toml")" 'model = "stale"'
+
+# Control: the same module with --check in a bare assignment. Under set -e that
+# aborts the script on drift, silently.
+# shellcheck disable=SC2016
+sed -e 's|^DOTFILES_DIR=.*|DOTFILES_DIR="'"$ROOT"'"|' \
+  -e 's|if out=\$("\$tool" --check 2>&1); then rc=0; else rc=\$?; fi|out=$("$tool" --check 2>\&1); rc=$?|' \
+  "$ROOT/setup.sh" >"$T/setup-bare.sh"
+check "control: the bare-assignment form differs from the shipped one" \
+  "$(cmp -s "$T/setup-bare.sh" "$ROOT/setup.sh" && echo same || echo differs)" differs
+out=$(HOME="$H" CODEX_HOME="$T/codex" bash "$T/setup-bare.sh" --dry-run codex 2>&1)
+check "control: the bare-assignment form never reaches the end" "$(printf '%s\n' "$out" | grep -c '^Done!$')" 0
+
+out=$(setup setup.sh codex)
+LIVE_OVERRIDE="$T/codex/config.toml"
+check "apply updates the owned key" "$(py "d['model']")" "$(python3 -c "import tomllib; print(tomllib.load(open('$ROOT/.codex/config.toml','rb'))['model'])")"
+check "apply backs up under the (temporary) home" "$(find "$H/.dotfiles-backup" -name config.toml | wc -l | tr -d ' ')" 1
+check "setup does not forge hook trust" "$(py "'hooks' in d")" False
+check "and still says to run /hooks" "$(printf '%s\n' "$out" | grep -c 'run /hooks')" 1
+unset LIVE_OVERRIDE
+
+out=$(setup setup.sh --dry-run symlinks)
+check "the symlink module links hooks.json" "$(printf '%s\n' "$out" | grep -c 'codex/hooks.json missing')" 1
+check "the symlink module never links config.toml" "$(printf '%s\n' "$out" | grep -c 'codex/config.toml')" 0
 
 echo
 echo "=== emitter round-trip ==="

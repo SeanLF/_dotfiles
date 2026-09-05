@@ -243,8 +243,6 @@ setup_symlinks() {
   # AGENTS.md is the cross-CLI canonical; Antigravity reads it via the
   # hardcoded ~/.gemini/GEMINI.md path (inherited from the Gemini CLI era).
   symlink_with_diff "$DOTFILES_DIR/AGENTS.md" "$HOME/.codex/AGENTS.md"
-  # config.toml is rendered by the codex module: Codex writes into it, so it
-  # cannot be a symlink into the repo.
   symlink_with_diff "$DOTFILES_DIR/.codex/rules/default.rules" "$HOME/.codex/rules/default.rules"
   symlink_with_diff "$DOTFILES_DIR/.codex/hooks.json" "$HOME/.codex/hooks.json"
   symlink_with_diff "$DOTFILES_DIR/AGENTS.md" "$HOME/.gemini/GEMINI.md"
@@ -268,7 +266,6 @@ setup_symlinks() {
 # Module: Codex config (bin/codex-config)
 setup_codex() {
   local tool="$DOTFILES_DIR/bin/codex-config" out rc
-  # Test position: under set -e a bare `out=$(...)` aborts the script on drift.
   if out=$("$tool" --check 2>&1); then rc=0; else rc=$?; fi
   case "$rc" in
     0) info "codex config: no drift" ;;
@@ -283,7 +280,6 @@ setup_codex() {
       ;;
   esac
 
-  # Only Codex can write trust, so this is a report in both modes.
   if out=$("$tool" --hooks-trust 2>&1); then
     info "codex hooks: trust recorded for every handler"
   else

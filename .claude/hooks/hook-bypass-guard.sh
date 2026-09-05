@@ -92,8 +92,6 @@ while IFS= read -r seg; do
     deny "Setting CLAUDECODE to anything but 1 turns the review gate off. ${HATCH}"
   fi
 
-  # Codex's marker is CODEX_THREAD_ID, a thread id rather than a fixed value, so
-  # there is no "the value it already has" exemption: any assignment is a change.
   if printf '%s' "$seg" | grep -qE '^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*CODEX_THREAD_ID[[:space:]]*=' ||
     { seg_command_is "$seg" 'export|declare|typeset|setenv|env' && printf '%s' "$seg" | grep -qE 'CODEX_THREAD_ID[[:space:]]*='; }; then
     deny "CODEX_THREAD_ID is what the review gate keys on under Codex, so setting it turns the gate off. ${HATCH}"

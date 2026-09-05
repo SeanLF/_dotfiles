@@ -21,8 +21,6 @@ no() {
 }
 check() { if [ "$2" = "$3" ]; then ok "$1"; else no "$1 (want $3, got $2)"; fi; }
 
-# Resolve the manifest's installed paths into this checkout, or a worktree tests
-# whatever ~/.claude/hooks points at instead of its own hooks.
 expand() {
   local p="$1"
   p="${p/#\~\/.claude\/hooks\//$ROOT/.claude/hooks/}"
@@ -50,7 +48,10 @@ done < <(jq -r '.. | objects | select(.type? == "command") | .command' "$CODEX")
 
 echo
 echo "=== parity with .claude/settings.json ==="
-# Claude-only handlers: rtk has no Codex processor (`rtk hook --help`).
+if command -v rtk >/dev/null 2>&1; then
+  check "rtk still has no Codex processor (else mirror it and drop the exclusion)" \
+    "$(rtk hook --help 2>&1 | grep -ci codex)" 0
+fi
 claude_bash=$(jq -r '.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[].command' "$CLAUDE" | grep -v '^rtk hook claude$' | sort)
 codex_bash=$(jq -r '.hooks.PreToolUse[] | select(.matcher == "^Bash$") | .hooks[].command' "$CODEX" | sort)
 check "Bash guards are the same set, in the same order, as Claude's" "$codex_bash" "$claude_bash"
@@ -153,6 +154,19 @@ check "the role file parses as TOML" "$(python3 -c "import tomllib,sys; tomllib.
 check "the role is named reviewer" "$(python3 -c "import tomllib; print(tomllib.load(open('$ROLE','rb'))['name'])")" reviewer
 check "the role pins a model (AGENTS.md: never inherit)" \
   "$(python3 -c "import tomllib; print('model' in tomllib.load(open('$ROLE','rb')))")" True
+
+if [ -z "${CODEX_HOOKS_SELFTEST:-}" ]; then
+  echo
+  echo "=== control: a worktree tests its own hooks ==="
+  WT=$(mktemp -d)
+  git -C "$ROOT" worktree add -q "$WT" HEAD 2>/dev/null
+  cp "$0" "$WT/tests/"
+  chmod -x "$WT/.claude/hooks/hook-bypass-guard.sh"
+  inner=$(CODEX_HOOKS_SELFTEST=1 bash "$WT/tests/$(basename "$0")" 2>&1 | tail -1)
+  git -C "$ROOT" worktree remove --force "$WT" 2>/dev/null
+  check "a disabled guard in the worktree fails there, not here" \
+    "$(printf '%s' "$inner" | grep -q ' 0 failed' && echo passed || echo failed)" failed
+fi
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
