@@ -1,10 +1,5 @@
-# The part of ~/.codex/config.toml that is a choice rather than machine state.
-# bin/codex-config keeps the live file equal to this on every key present here
-# and leaves everything else alone (project trust, hook trust hashes, app-written
-# plugin and MCP entries). Never add [projects] or [hooks.state] here. A key
-# removed from here stops being owned and stays in the live file: delete it
-# there too. Project-only MCP servers (Xcode for steer) belong in that repo's
-# .codex/config.toml, which Codex layers on top when the project is trusted.
+# Rendered into ~/.codex/config.toml by bin/codex-config, which owns only the
+# keys here. Never add [projects] or [hooks.state].
 
 model = "gpt-5.6-luna"
 approvals_reviewer = "user"

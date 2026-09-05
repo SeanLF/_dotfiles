@@ -1,12 +1,7 @@
 #!/bin/bash
-# The Codex hook manifest (.codex/hooks.json) must carry the same guards as the
-# Claude Code one (.claude/settings.json), and they must actually fire on the
-# payload shapes Codex sends. Parity is asserted, not assumed: a guard added to
-# one manifest and not the other fails here.
-#
-# Payload shapes were captured from codex 0.153.2 on 2026-09-05: PreToolUse
-# carries tool_name, tool_input.command and cwd; apply_patch puts the patch in
-# tool_input.command; SubagentStop carries agent_type (the role name).
+# The Codex hook manifest (.codex/hooks.json) carries the same guards as the
+# Claude Code one (.claude/settings.json), and they fire on the payloads Codex
+# sends. A guard added to one manifest and not the other fails here.
 set -uo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -26,8 +21,8 @@ no() {
 }
 check() { if [ "$2" = "$3" ]; then ok "$1"; else no "$1 (want $3, got $2)"; fi; }
 
-# The manifest names the installed paths. Resolve them into THIS checkout, so a
-# worktree tests its own hooks rather than whatever ~/.claude/hooks points at.
+# Resolve the manifest's installed paths into this checkout, or a worktree tests
+# whatever ~/.claude/hooks points at instead of its own hooks.
 expand() {
   local p="$1"
   p="${p/#\~\/.claude\/hooks\//$ROOT/.claude/hooks/}"
@@ -77,8 +72,8 @@ check "SessionEnd handlers fit Codex's 3s ceiling" \
 
 echo
 echo "=== the guards fire on Codex payloads ==="
-# Run every handler Codex would run for an event, in manifest order, and report
-# the first deny. This is what the Codex engine does, minus the trust check.
+# Every handler for an event, in manifest order; the first deny wins. What the
+# Codex engine does, minus the trust check.
 run_event() { # $1 event, $2 tool_name, $3 payload json
   local out cmd bin
   while IFS= read -r cmd; do

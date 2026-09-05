@@ -1,7 +1,6 @@
 #!/bin/bash
 # Global post-commit: marks an agent commit as awaiting review, then hands off
-# to lefthook. See pre-commit for the trust boundary. The markers are the ones
-# bin/review-gate keys on: CLAUDECODE=1 (Claude Code) or CODEX_THREAD_ID (Codex).
+# to lefthook. See pre-commit for the trust boundary.
 set -euo pipefail
 
 # Not named GIT_DIR: git exports that into hooks inside a linked worktree.

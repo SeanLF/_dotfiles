@@ -56,9 +56,8 @@ pending() {
   "${REVIEW_GATE_BIN:-$ROOT/bin/review-gate}" --pending >/dev/null 2>&1
   echo $?
 }
-# The PreToolUse guard, fed the JSON Claude Code and Codex send it (same field
-# names; Codex names its edit tool apply_patch and puts the patch in
-# tool_input.command). "allow" is no output.
+# The PreToolUse guard, fed the JSON the harnesses send it (apply_patch carries
+# the patch in tool_input.command). "allow" is no output.
 guard() { # $1 tool, $2 file_path or command
   local out
   if [ "$1" = Bash ] || [ "$1" = apply_patch ]; then

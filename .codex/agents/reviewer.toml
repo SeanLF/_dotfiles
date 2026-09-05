@@ -1,6 +1,3 @@
-# Codex agent role. Spawn with agent_type = "reviewer"; bin/record-review counts
-# its completion as a review for the push gate, the way it counts the Claude
-# reviewer agents. Model pinned: a role never inherits the parent's.
 name = "reviewer"
 description = "Refutes a change rather than confirms it. Reads the diff it is pointed at, attacks the premise, the coverage and what was deleted, and reports the argument. Use before committing or pushing."
 model = "gpt-5.5"

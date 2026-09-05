@@ -4,13 +4,12 @@
 # Opt-in, because it spends tokens: it drives a real headless Codex. Everything
 # else in tests/ is free and offline, so this is not in `just test`.
 #
-# The invariant it defends: Codex runs user-level hooks from ~/.codex/hooks.json
-# with the PreToolUse payload shape our guards parse, and a deny from a guard
-# stops the tool. tests/test-codex-hooks.sh proves the guards deny the payloads
-# we captured; only this proves Codex still sends them and still listens.
+# The invariant it defends: Codex runs ~/.codex/hooks.json with the PreToolUse
+# payload the guards parse, and a deny stops the tool. tests/test-codex-hooks.sh
+# proves the guards deny that payload; only this proves Codex still sends it.
 #
-# --dangerously-bypass-hook-trust so the probe does not depend on /hooks having
-# been run on this machine; the hooks it bypasses trust for are our own.
+# --dangerously-bypass-hook-trust: the hooks it bypasses trust for are our own,
+# and /hooks may not have been run on this machine.
 set -uo pipefail
 
 command -v codex >/dev/null 2>&1 || {

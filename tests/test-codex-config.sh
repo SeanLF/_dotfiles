@@ -1,8 +1,6 @@
 #!/bin/bash
-# Harness for bin/codex-config: the tracked .codex/config.toml owns its keys in
-# ~/.codex/config.toml and nothing else. Codex writes project trust, hook trust
-# hashes and app-managed entries into the same file, and every one of those must
-# survive an --apply byte for byte in meaning.
+# Harness for bin/codex-config: the tracked file owns its keys in the live file
+# and nothing else; everything Codex writes there survives an --apply.
 set -uo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -179,9 +177,7 @@ check "--hooks-trust exits 0 once every handler is trusted" "$(
 
 echo
 echo "=== emitter round-trip ==="
-# The emitter is hand-rolled (the standard library only reads TOML). Every write
-# is parsed back and compared before it lands; this proves the guard itself can
-# fail, on the real live config when there is one.
+# The render-then-parse-back guard, on the real live config when there is one.
 REAL="${CODEX_HOME:-$HOME/.codex}/config.toml"
 [ -f "$REAL" ] || REAL="$LIVE"
 python3 - "$CC" "$REAL" <<'EOF'

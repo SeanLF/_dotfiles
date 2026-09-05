@@ -243,8 +243,8 @@ setup_symlinks() {
   # AGENTS.md is the cross-CLI canonical; Antigravity reads it via the
   # hardcoded ~/.gemini/GEMINI.md path (inherited from the Gemini CLI era).
   symlink_with_diff "$DOTFILES_DIR/AGENTS.md" "$HOME/.codex/AGENTS.md"
-  # config.toml is rendered by the codex module, not symlinked: Codex writes
-  # project trust and hook trust hashes into it, and those stay out of the repo.
+  # config.toml is rendered by the codex module: Codex writes into it, so it
+  # cannot be a symlink into the repo.
   symlink_with_diff "$DOTFILES_DIR/.codex/rules/default.rules" "$HOME/.codex/rules/default.rules"
   symlink_with_diff "$DOTFILES_DIR/.codex/hooks.json" "$HOME/.codex/hooks.json"
   symlink_with_diff "$DOTFILES_DIR/AGENTS.md" "$HOME/.gemini/GEMINI.md"
@@ -260,20 +260,15 @@ setup_symlinks() {
   symlink_dir "$DOTFILES_DIR/.claude/commands" "$HOME/.claude/commands"
   symlink_dir "$DOTFILES_DIR/.claude/hooks" "$HOME/.claude/hooks"
   symlink_dir "$DOTFILES_DIR/.claude/skills" "$HOME/.claude/skills"
-  # Codex agent roles: every *.toml in the directory is a role.
   symlink_dir "$DOTFILES_DIR/.codex/agents" "$HOME/.codex/agents"
 
   info "Symlinks: done"
 }
 
-# Module: Codex config. bin/codex-config owns every key in .codex/config.toml and
-# leaves the rest of ~/.codex/config.toml alone; see that file for the split.
-# Hook trust lives there too: Codex refuses a hook until /hooks has recorded a
-# hash of its definition, so a fresh hooks.json is inert until that runs once.
+# Module: Codex config (bin/codex-config)
 setup_codex() {
   local tool="$DOTFILES_DIR/bin/codex-config" out rc
-  # A bare assignment inherits the substitution's exit status, and this script
-  # runs under set -e, so the test position is the only place --check can fail.
+  # Test position: under set -e a bare `out=$(...)` aborts the script on drift.
   if out=$("$tool" --check 2>&1); then rc=0; else rc=$?; fi
   case "$rc" in
     0) info "codex config: no drift" ;;
@@ -288,8 +283,7 @@ setup_codex() {
       ;;
   esac
 
-  # Only Codex can record trust (it hashes the handler definition from inside
-  # /hooks), so this is reported the same way in both modes.
+  # Only Codex can write trust, so this is a report in both modes.
   if out=$("$tool" --hooks-trust 2>&1); then
     info "codex hooks: trust recorded for every handler"
   else

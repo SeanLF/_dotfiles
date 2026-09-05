@@ -1,7 +1,6 @@
 #!/bin/bash
 # Refuse edits and further commits while HEAD is an agent commit no reviewer
-# has seen (bin/review-gate --pending). Fails OPEN on its own errors. Reads the
-# PreToolUse JSON both Claude Code and Codex send (same field names).
+# has seen (bin/review-gate --pending). Fails OPEN on its own errors.
 set -o pipefail
 # shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/hook-lib.sh"
