@@ -111,12 +111,14 @@ step_appstore() {
   fi
 }
 
-# Xcode betas (xcodes). Stable is the App Store copy and mas upgrades it; here it
-# is report-only. Betas churn fast, so if you already run a beta we auto-upgrade
-# it to the latest prerelease.
+# Xcode prereleases (xcodes). Stable is the App Store copy and mas upgrades it;
+# here it is report-only. Prereleases churn fast, so if you already run one we
+# auto-upgrade it to the latest.
 # `xcodes list` prints ascending and marks installed versions "(Installed)", so
-# the last "Beta" line is the newest prerelease and tells us if we're already on
-# it (cheap guard against a needless multi-GB re-download).
+# the last "Beta" or "Release Candidate" line is the newest prerelease and tells
+# us if we're already on it (cheap guard against a needless multi-GB re-download).
+# RCs are prereleases too: `--latest-prerelease` installs them, so the parse and
+# the installed gate must both match them or the RC is invisible.
 step_xcodes() {
   step "Xcode (xcodes)"
   command -v xcodes &>/dev/null || {
@@ -129,30 +131,31 @@ step_xcodes() {
 
   # Anchor on lines starting with a version number to skip blank lines and the
   # "Showing Xcodes for this Mac..." footer that `xcodes list` prints. Read once.
-  local list latest_beta latest_stable
+  local list prerelease_re latest_pre latest_stable
+  prerelease_re="beta|release candidate"
   list=$(xcodes list 2>/dev/null)
-  latest_beta=$(echo "$list" | grep -iE "^[0-9].*beta" | tail -1)
-  latest_stable=$(echo "$list" | grep -E "^[0-9]" | grep -viE "beta|release candidate" | tail -1)
+  latest_pre=$(echo "$list" | grep -iE "^[0-9].*($prerelease_re)" | tail -1)
+  latest_stable=$(echo "$list" | grep -E "^[0-9]" | grep -viE "$prerelease_re" | tail -1)
 
-  # Auto-upgrade the beta only if one is installed and it isn't already newest.
+  # Auto-upgrade the prerelease only if one is installed and it isn't already newest.
   # Multi-GB download; may prompt for your Apple ID if xcodes has no cached
   # session. --latest-prerelease self-updates the list before installing. Guard
   # the empty-parse case so a format drift can't blank the "already newest"
   # check and trigger a needless re-download.
-  if [[ -z "$latest_beta" ]]; then
-    warn "xcodes: could not parse a beta from 'xcodes list' (format change?)"
-  elif xcodes installed 2>/dev/null | grep -qi "beta"; then
-    if echo "$latest_beta" | grep -qi "installed"; then
-      info "on latest beta: $latest_beta"
+  if [[ -z "$latest_pre" ]]; then
+    warn "xcodes: could not parse a prerelease from 'xcodes list' (format change?)"
+  elif xcodes installed 2>/dev/null | grep -qiE "$prerelease_re"; then
+    if echo "$latest_pre" | grep -qi "installed"; then
+      info "on latest prerelease: $latest_pre"
     elif $CHECK_ONLY; then
-      info "newer beta available — would install: $latest_beta"
+      info "newer prerelease available — would install: $latest_pre"
     elif [[ -t 0 ]]; then
-      info "upgrading to latest beta: $latest_beta"
+      info "upgrading to latest prerelease: $latest_pre"
       try xcodes install --latest-prerelease
     else
       # xcodes needs interactive Apple ID 2FA; a headless run can't answer it,
       # so report instead of failing on every unattended sweep.
-      info "newer beta available (run maintenance interactively — needs Apple ID 2FA): $latest_beta"
+      info "newer prerelease available (run maintenance interactively — needs Apple ID 2FA): $latest_pre"
     fi
   fi
 

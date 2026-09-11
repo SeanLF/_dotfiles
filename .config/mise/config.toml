@@ -33,6 +33,11 @@ rust = "latest"
 # aarch64-apple-darwin builds and serves x86_64 via rosetta2, which this Mac can't run
 "github:tldr-pages/tlrc" = "latest"
 "aqua:ajeetdsouza/zoxide" = "latest"
+# Network diagnostics (Brewfile keeps iperf3, C with no upstream binaries, and mole,
+# whose brew formula assembles the `mo` script from parts the release tarball lacks)
+"aqua:mr-karan/doggo" = "latest"
+"github:fujiapple852/trippy" = "latest" # trip
+"github:imsnif/bandwhich" = "latest"
 "github:Arthur-Ficial/apfel" = "latest"
 # mas stays on Homebrew — `brew bundle dump` uses it to enumerate App Store apps
 "github:rtk-ai/rtk" = "latest"

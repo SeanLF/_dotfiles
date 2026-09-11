@@ -2,7 +2,7 @@
 
 # Required parameters:
 # @raycast.schemaVersion 1
-# @raycast.title Toggle NextDNS
+# @raycast.title Toggle Next DNS
 # @raycast.mode compact
 
 # Optional parameters:

@@ -41,6 +41,8 @@ brew "grep"
 brew "hey"
 # Command-line tool to export and inspect local iMessage database
 brew "imessage-exporter"
+# Update of iperf: measures TCP, UDP, and SCTP bandwidth
+brew "iperf3"
 # Style and grammar checker
 brew "languagetool"
 # Pager program similar to more
@@ -57,6 +59,8 @@ brew "mas"
 brew "mercury-cli"
 # Polyglot runtime manager (asdf rust clone)
 brew "mise"
+# Deep clean and optimize your Mac
+brew "mole"
 # Ping Tool in Rust with Real-Time Data and Visualizations
 brew "nbping"
 # CLI for NextDNS's DNS-over-HTTPS (DoH)
