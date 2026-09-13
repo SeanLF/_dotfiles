@@ -191,6 +191,8 @@ run_cases() {
 x
 EOF2')" deny
   check "the guard allows a redirect into /tmp while pending" "$(guard Bash 'echo x > /tmp/scratch.txt')" allow
+  check "the guard allows a redirect to a file descriptor while pending" "$(guard Bash 'make check 2>&1 | tail -n 20; echo done >&2')" allow
+  check "the guard refuses a >&file redirect into the tree while pending" "$(guard Bash 'echo x >&file.txt')" deny
   check "the guard allows a read while pending" "$(guard Bash 'rg -n foo file.txt')" allow
   review pr-review-toolkit:code-reviewer
   push >/dev/null
