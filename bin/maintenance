@@ -90,7 +90,7 @@ step_snapshot() {
   fi
   # Keep the newest 30 rollback points (about a month of daily runs).
   while IFS= read -r old; do
-    [[ -d "$old" ]] && rm -r "$old"
+    rm -r "$old" || warn "snapshot: could not prune $old"
   done < <(find "$versions_dir" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -r | tail -n +31)
 }
 
