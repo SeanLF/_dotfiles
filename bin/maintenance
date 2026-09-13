@@ -40,7 +40,16 @@ BREWFILE="$DOTFILES_DIR/Brewfile"
 RUBY_GEMS="$DOTFILES_DIR/ruby-global-gems"
 failures=()
 
-step() { echo -e "${bold}${blue}==> $1${reset}"; }
+step_started=""
+step_done() {
+  [[ -n "$step_started" ]] || return 0
+  info "($((SECONDS - step_started))s)"
+}
+step() {
+  step_done
+  step_started=$SECONDS
+  echo -e "${bold}${blue}==> $1${reset}"
+}
 info() { echo -e "${dim}$1${reset}"; }
 ok() { echo -e "${green}$1${reset}"; }
 warn() {
@@ -62,8 +71,8 @@ step_snapshot() {
     info "(skipped in --check mode — nothing to protect)"
     return
   fi
-  local out
-  out="$HOME/.dotfiles-backup/versions/$(date +%Y%m%d-%H%M%S)"
+  local versions_dir="$HOME/.dotfiles-backup/versions" out old
+  out="$versions_dir/$(date +%Y%m%d-%H%M%S)"
   mkdir -p "$out" || {
     warn "could not create snapshot dir $out"
     return
@@ -79,6 +88,10 @@ step_snapshot() {
   else
     warn "snapshot: mise.txt is empty — rollback point may be unusable ($out)"
   fi
+  # Keep the newest 30 rollback points (about a month of daily runs).
+  while IFS= read -r old; do
+    [[ -d "$old" ]] && rm -r "$old"
+  done < <(find "$versions_dir" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -r | tail -n +31)
 }
 
 step_homebrew() {
@@ -159,7 +172,11 @@ step_xcodes() {
     fi
   fi
 
-  if [[ -n "$latest_stable" ]]; then
+  if [[ -z "$latest_stable" ]]; then
+    :
+  elif echo "$latest_stable" | grep -qi "installed"; then
+    info "on latest stable: $latest_stable"
+  else
     info "latest stable available (install manually): $latest_stable"
   fi
 }
@@ -215,8 +232,9 @@ step_claude_plugins() {
     return
   fi
   # Use the full "name@marketplace" id — `claude plugin update` resolves that,
-  # not the bare name.
-  ids=$(jq -r '.[] | select(.enabled) | .id' <<<"$raw" 2>/dev/null) || {
+  # not the bare name. A plugin enabled at both user and project scope is listed
+  # once per scope; the update is per id, so dedupe or it runs twice.
+  ids=$(jq -r '[.[] | select(.enabled) | .id] | unique[]' <<<"$raw" 2>/dev/null) || {
     warn "could not parse plugin list (format change?)"
     return
   }
@@ -247,25 +265,41 @@ step_mise() {
   fi
   if $CHECK_ONLY; then
     GITHUB_TOKEN="$gh_token" mise outdated || true
-  else
-    GITHUB_TOKEN="$gh_token" try mise upgrade
-    try mise prune --yes
+    return
   fi
+  # mise exits 0 when it cannot resolve a tool's latest version (rate limit,
+  # flaky GitHub API) and then reports "all up to date"; that tool was silently
+  # skipped. Its warnings go to stderr, so capture that and surface them.
+  local log
+  log=$(mktemp)
+  GITHUB_TOKEN="$gh_token" mise upgrade 2>"$log" || warn "mise upgrade failed"
+  cat "$log" >&2
+  if grep -qE "Error getting latest version|Remote versions cannot be fetched" "$log"; then
+    warn "mise: could not resolve the latest version of some tools; they were not upgraded"
+  fi
+  rm -f "$log"
+  try mise prune --yes
 }
 
 # `mise prune` only removes orphaned versions tracked via configs; tools
 # installed with no config source linger silently. `mise ls` renders the
 # source config as the 3rd column, so any row with fewer than 3 columns
-# is an undeclared install.
+# is an undeclared install — unless another project's config declares it.
+# `mise ls` only resolves sources from the configs active in the cwd, but
+# mise keeps symlinks to every config it has seen in its state dir.
 step_mise_drift() {
   step "mise drift"
-  local drift
-  drift=$(mise ls 2>/dev/null | awk 'NF>0 && NF<3 {print "  - " $1 " " $2}') || true
+  local tracked drift="" name ver
+  tracked=$(cat "$HOME/.local/state/mise/tracked-configs"/* 2>/dev/null) || true
+  while read -r name ver _; do
+    [[ -n "$name" ]] || continue
+    grep -qF "$name" <<<"$tracked" || drift+="  - $name $ver"$'\n'
+  done < <(mise ls 2>/dev/null | awk 'NF>0 && NF<3')
   if [[ -z "$drift" ]]; then
     ok "all mise installs declared"
   else
     warn "untracked mise installs (declare in config or uninstall):"
-    echo "$drift" >&2
+    printf '%s' "$drift" >&2
   fi
 }
 
@@ -330,8 +364,9 @@ step_gems() {
     ssl_args=(-- --with-openssl-dir="$openssl_prefix")
   fi
 
-  ((${#wanted[@]})) && try gem install --no-document "${wanted[@]}" "${ssl_args[@]}"
+  ((${#wanted[@]})) && try gem install --no-document --conservative "${wanted[@]}" "${ssl_args[@]}"
   try gem update "${ssl_args[@]}"
+  try gem cleanup
 }
 
 # rustup is bootstrapped manually (not via brew or mise). mise's `rust` plugin
@@ -372,7 +407,7 @@ step_brewfile() {
 
 step_macos() {
   step "macOS updates"
-  softwareupdate --list 2>&1 | grep -v "^Software Update Tool" || true
+  softwareupdate --list 2>&1 | grep -vE "^Software Update Tool|^Finding available software|^$" || true
 }
 
 # Bail early if offline
@@ -395,6 +430,7 @@ step_uv
 step_tldr
 step_brewfile
 step_macos
+step_done
 
 echo ""
 if [[ ${#failures[@]} -gt 0 ]]; then
