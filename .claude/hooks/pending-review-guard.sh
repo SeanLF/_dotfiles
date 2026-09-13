@@ -26,7 +26,7 @@ case "$TOOL" in
     # `>&1backup.log` and `>&-x` are files.
     if ! is_git_commit "$STRIPPED" &&
       ! printf '%s' "$STRIPPED" | grep -qE '(^|[[:space:]])(sed|perl|ruby)[[:space:]]+(-[a-zA-Z]*i|--in-place)|(^|[;&|][[:space:]]*)[[:space:]]*(tee|patch|install|truncate)([[:space:]]|$)|git[[:space:]]+apply' &&
-      ! printf '%s' "$COMMAND" | grep -qE '>>?[[:space:]]*"?(\$|[^[:space:]"/&]|&(-[^[:space:];|&)]|[0-9]*[^-0-9[:space:];|&)<>]))' &&
+      ! printf '%s' "$COMMAND" | grep -qE '>>?[[:space:]]*"?(\$|[^[:space:]"/&]|&(-[^[:space:];|&)<>]|[0-9]*[^-0-9[:space:];|&)<>]))' &&
       ! printf '%s' "$COMMAND" | grep -qE '>>?[[:space:]]*"?/(Users|Volumes|opt|etc|usr)'; then
       exit 0
     fi
