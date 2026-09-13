@@ -21,10 +21,12 @@ case "$TOOL" in
     STRIPPED=$(printf '%s' "$COMMAND" | strip_quotes)
     # A commit, or a write into the tree by any of the usual shell shapes.
     # Redirects into /tmp and /dev/null are scratch, not edits, and neither is
-    # a redirect to a file descriptor (`2>&1`, `>&2`); `>&word` is a file.
+    # a redirect to a file descriptor (`2>&1`, `>&2`, `>&-`). bash only treats
+    # `>&word` as a descriptor when the whole word is digits or a bare `-`;
+    # `>&1backup.log` and `>&-x` are files.
     if ! is_git_commit "$STRIPPED" &&
       ! printf '%s' "$STRIPPED" | grep -qE '(^|[[:space:]])(sed|perl|ruby)[[:space:]]+(-[a-zA-Z]*i|--in-place)|(^|[;&|][[:space:]]*)[[:space:]]*(tee|patch|install|truncate)([[:space:]]|$)|git[[:space:]]+apply' &&
-      ! printf '%s' "$COMMAND" | grep -qE '>>?[[:space:]]*"?(\$|[^[:space:]"/&]|&[^0-9-])' &&
+      ! printf '%s' "$COMMAND" | grep -qE '>>?[[:space:]]*"?(\$|[^[:space:]"/&]|&(-[^[:space:];|&)]|[0-9]*[^-0-9[:space:];|&)<>]))' &&
       ! printf '%s' "$COMMAND" | grep -qE '>>?[[:space:]]*"?/(Users|Volumes|opt|etc|usr)'; then
       exit 0
     fi
