@@ -22,10 +22,14 @@ TS="${TAILSCALE_BIN:-/Applications/Tailscale.app/Contents/MacOS/Tailscale}"
 
 if "$TS" dns status 2>/dev/null | grep -q "Tailscale DNS: enabled"; then
   "$TS" set --accept-dns=false
-  sudo dscacheutil -flushcache
-  sudo killall -HUP mDNSResponder 2>/dev/null
-  echo "DNS: network resolver (captive-portal mode); MagicDNS off"
+  msg="DNS: network resolver (captive-portal mode); MagicDNS off"
 else
   "$TS" set --accept-dns=true
-  echo "DNS: Tailscale -> NextDNS; MagicDNS on"
+  msg="DNS: Tailscale -> NextDNS; MagicDNS on"
 fi
+
+# Flush both ways: answers cached from a captive portal's hijacking resolver
+# must not outlive the switch back.
+sudo dscacheutil -flushcache
+sudo killall -HUP mDNSResponder 2>/dev/null
+echo "$msg"

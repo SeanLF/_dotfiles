@@ -36,14 +36,16 @@ if [[ "$(cat "$TS_STATE")" == on ]]; then echo "  nameserver[0] : 100.100.100.10
 EOF
 printf '#!/bin/bash\n"$@"\n' >"$SANDBOX/bin/sudo"
 printf '#!/bin/bash\necho 93.184.216.34\n' >"$SANDBOX/bin/dig"
-printf '#!/bin/bash\nexit 0\n' >"$SANDBOX/bin/dscacheutil"
+# shellcheck disable=SC2016 # the shim expands $FLUSH_LOG at run time
+printf '#!/bin/bash\necho flush >>"$FLUSH_LOG"\nexit 0\n' >"$SANDBOX/bin/dscacheutil"
 printf '#!/bin/bash\nexit 0\n' >"$SANDBOX/bin/killall"
 chmod +x "$SANDBOX"/bin/*
 
 run() { # $1=script $2=initial state
   echo "$2" >"$SANDBOX/state"
   : >"$SANDBOX/ts.log"
-  PATH="$SANDBOX/bin:$PATH" TS_STATE="$SANDBOX/state" TS_LOG="$SANDBOX/ts.log" TAILSCALE_BIN="$SANDBOX/bin/tailscale" \
+  : >"$SANDBOX/flush.log"
+  PATH="$SANDBOX/bin:$PATH" TS_STATE="$SANDBOX/state" TS_LOG="$SANDBOX/ts.log" FLUSH_LOG="$SANDBOX/flush.log" TAILSCALE_BIN="$SANDBOX/bin/tailscale" \
     bash "$ROOT/raycast-scripts/$1" 2>&1
 }
 state() { cat "$SANDBOX/state"; }
@@ -57,6 +59,7 @@ check "on -> off: says network DNS is in use" "$(echo "$out" | rg -c -i 'network
 out=$(run toggle-dns.sh off)
 check "off -> on: Tailscale DNS enabled" "$(state)" on
 check "off -> on: says Tailscale/NextDNS is in use" "$(echo "$out" | rg -c -i 'nextdns')" 1
+check "off -> on: flushes the cache (portal-hijacked answers must not linger)" "$(rg -c flush "$SANDBOX/flush.log" || echo 0)" 1
 check "toggle never touches the nextdns CLI" "$(mentions_nextdns_cli toggle-dns.sh)" 0
 
 echo "=== fix-dns ==="
