@@ -63,8 +63,6 @@ brew "mise"
 brew "mole"
 # Ping Tool in Rust with Real-Time Data and Visualizations
 brew "nbping"
-# CLI for NextDNS's DNS-over-HTTPS (DoH)
-brew "nextdns"
 # OpenBSD freely-licensed SSH connectivity tools
 brew "openssh"
 # Swiss-army knife of markup format conversion

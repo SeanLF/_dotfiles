@@ -366,49 +366,24 @@ setup_macos() {
   "$bash_path" "$macos_script"
 }
 
-# Module: DNS (NextDNS daemon + Tailscale MagicDNS search domain)
+# Module: DNS (Tailscale DNS -> NextDNS; sudoers for the Raycast DNS scripts)
 setup_dns() {
-  if ! command -v nextdns &>/dev/null; then
-    warn "NextDNS not installed. Run: ./setup.sh brew"
+  local ts="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+  if [[ ! -x "$ts" ]]; then
+    warn "Tailscale.app not installed. Run: ./setup.sh brew"
     return 1
   fi
 
-  # NextDNS config (profile + Tailscale forwarder)
-  local current_profile
-  current_profile=$(nextdns config 2>/dev/null | grep "^profile " | awk '{print $2}')
-  if [[ -z "$current_profile" ]]; then
-    drift "NextDNS profile not configured"
-    if ! $DRY_RUN; then
-      echo "  Find your profile ID at https://my.nextdns.io (the alphanumeric ID in the URL)"
-      read -rp "  NextDNS profile ID: " profile_id
-      [[ -z "$profile_id" ]] && error "Profile ID required"
-      sudo nextdns config set -profile "$profile_id"
-    fi
+  # The tailnet policy decides the NextDNS profile per device; the Mac only has
+  # to accept Tailscale's DNS settings.
+  if ! "$ts" dns status 2>/dev/null | grep -q "Tailscale DNS: enabled"; then
+    drift "Tailscale DNS not accepted (system resolver is not 100.100.100.100)"
+    $DRY_RUN || "$ts" set --accept-dns=true
   fi
 
-  # Tailscale MagicDNS forwarder
-  local ts_domain
-  ts_domain=$(/usr/local/bin/tailscale status --json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin)['CurrentTailnet']['MagicDNSSuffix'])" 2>/dev/null || echo "")
-  if [[ -n "$ts_domain" ]] && ! nextdns config 2>/dev/null | grep -q "forwarder.*$ts_domain"; then
-    drift "NextDNS missing Tailscale forwarder for $ts_domain"
-    $DRY_RUN || sudo nextdns config set -forwarder "${ts_domain}.=100.100.100.100"
-  fi
-
-  # Cache size
-  if ! nextdns config 2>/dev/null | grep -q "cache-size 10MB"; then
-    drift "NextDNS cache size not set to 10MB"
-    $DRY_RUN || sudo nextdns config set -cache-size 10MB
-  fi
-
-  # Install and activate
-  if ! $DRY_RUN; then
-    sudo nextdns install 2>/dev/null || true
-    sudo nextdns activate 2>/dev/null || true
-  fi
-
-  # NextDNS sudoers (passwordless for Raycast script)
-  local sudoers="/etc/sudoers.d/nextdns"
-  local sudoers_line="$USER ALL=(ALL) NOPASSWD: /opt/homebrew/bin/nextdns activate, /opt/homebrew/bin/nextdns deactivate, /opt/homebrew/bin/nextdns restart, /opt/homebrew/bin/nextdns status, $DOTFILES_DIR/bin/tailscale-search-domain, /usr/bin/dscacheutil -flushcache, /usr/bin/killall -HUP mDNSResponder"
+  # Passwordless cache flush for raycast-scripts/{toggle,fix}-dns.sh.
+  local sudoers="/etc/sudoers.d/raycast-dns"
+  local sudoers_line="$USER ALL=(ALL) NOPASSWD: /usr/bin/dscacheutil -flushcache, /usr/bin/killall -HUP mDNSResponder"
 
   # Sudoers file is root-owned 0440, so reading it for content comparison needs
   # sudo. Dry-runs must never prompt for a password (would deadlock in pre-push
@@ -420,30 +395,13 @@ setup_dns() {
   }
 
   if [[ ! -f "$sudoers" ]]; then
-    drift "NextDNS sudoers not configured (passwordless commands)"
+    drift "Raycast DNS sudoers not configured (passwordless cache flush)"
     $DRY_RUN || write_sudoers
   elif $DRY_RUN && ! sudo -n true 2>/dev/null; then
-    info "NextDNS sudoers: exists (content not verified — no cached sudo)"
-  elif [[ "$(sudo cat "$sudoers")" != "$sudoers_line" ]]; then
-    drift "NextDNS sudoers content out of date"
+    info "Raycast DNS sudoers: exists (content not verified — no cached sudo)"
+  elif [[ "$(sudo grep -v '^#' "$sudoers")" != "$sudoers_line" ]]; then
+    drift "Raycast DNS sudoers content out of date"
     $DRY_RUN || write_sudoers
-  fi
-
-  # Tailscale search domain launchd plist (copy, not symlink -- launchd requirement)
-  local plist="com.tailscale.searchdomain.plist"
-  local src="$DOTFILES_DIR/$plist"
-  local dst="/Library/LaunchDaemons/$plist"
-
-  local rendered
-  rendered=$(sed "s|__DOTFILES_DIR__|$DOTFILES_DIR|g" "$src")
-
-  if ! echo "$rendered" | diff -q - "$dst" &>/dev/null 2>&1; then
-    drift "Tailscale search domain plist out of date"
-    if ! $DRY_RUN; then
-      echo "$rendered" | sudo tee "$dst" >/dev/null
-      sudo launchctl bootout system "$dst" 2>/dev/null || true
-      sudo launchctl bootstrap system "$dst"
-    fi
   fi
 
   info "DNS: done"
@@ -466,7 +424,7 @@ Modules:
   symlinks  Create dotfile symlinks (with drift detection)
   codex     Render ~/.codex/config.toml from .codex/config.toml; report untrusted hooks
   ssh       Verify 1Password SSH agent
-  dns       NextDNS sudoers + Tailscale search domain plist
+  dns       Accept Tailscale DNS (NextDNS via tailnet policy) + Raycast sudoers
   macos     Apply macOS defaults (Finder, Dock, keyboard)
   all       Run all modules (default)
 

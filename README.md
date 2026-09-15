@@ -25,8 +25,8 @@ A few Homebrew entries (`bash`, `curl`, `less`, `perl`, `vim`) exist specificall
 | `.claude/`              | Claude Code config: settings, hooks, agents, skills, slash commands                                                         |
 | `.codex/`               | Codex config: tracked `config.toml` (rendered, not symlinked), `hooks.json` mirroring the Claude guards, agent roles, rules |
 | `.ssh/config`           | SSH host config (1Password agent)                                                                                           |
-| `bin/`                  | Small scripts: `maint`, `review-gate`, `codex-config`, `online`, `nextdns-configure`, `tailscale-search-domain`             |
-| `raycast-scripts/`      | Raycast script commands (toggle/fix NextDNS) — point Raycast at this directory                                              |
+| `bin/`                  | Small scripts: `maint`, `review-gate`, `codex-config`, `online`, `nextdns-configure`                                        |
+| `raycast-scripts/`      | Raycast script commands (toggle/fix Tailscale DNS) — point Raycast at this directory                                        |
 | `justfile`              | Dev tasks: `just check`, `just lint`, `just fmt`, `just dry-run`, `just deps`                                               |
 | `lefthook.yml`          | Git hooks: lint staged files pre-commit, run `just check` pre-push                                                          |
 | `.editorconfig`         | Shared editor conventions (indentation, line endings, trailing whitespace)                                                  |

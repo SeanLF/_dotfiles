@@ -9,62 +9,30 @@
 # @raycast.icon globe
 # @raycast.packageName Network
 
-# DNS stack:
-#   NextDNS daemon on 127.0.0.1:53 -- always-on system resolver, local cache, ad/malware/phishing blocking
-#   Tailscale MagicDNS via NextDNS forwarder + search domain (--accept-dns=false)
-#   ProtonVPN: custom DNS set to 127.0.0.1 (routes through NextDNS inside tunnel)
+# DNS stack: Tailscale DNS (100.100.100.100) -> NextDNS over DoH, per-device
+# profile from the tailnet policy; MagicDNS and the ts.net search domain come
+# with it. Nothing else should be configuring the resolver.
 
-DIR="$(dirname "$0")/.."
-fixes=()
-
-# Never hardcode the binary: `activate` rewrites /etc/nextdns.conf from the flags it knows.
-NEXTDNS=$("$DIR/bin/nextdns-bin") || {
-  echo "NextDNS binary not found"
+TS="${TAILSCALE_BIN:-/Applications/Tailscale.app/Contents/MacOS/Tailscale}"
+[[ -x "$TS" ]] || TS=$(command -v tailscale) || {
+  echo "tailscale not found"
   exit 1
 }
+fixes=()
 
-# Ensure NextDNS daemon is running
-if ! dig @127.0.0.1 example.com +short +time=1 +tries=1 &>/dev/null; then
-  sudo "$NEXTDNS" restart &>/dev/null
-  fixes+=("restarted NextDNS")
+if ! "$TS" dns status 2>/dev/null | grep -q "Tailscale DNS: enabled"; then
+  "$TS" set --accept-dns=true && fixes+=("enabled Tailscale DNS")
 fi
 
-# Ensure 127.0.0.1 is the system resolver
-if ! scutil --dns 2>/dev/null | grep -q "127.0.0.1"; then
-  sudo "$NEXTDNS" activate &>/dev/null
-  fixes+=("activated NextDNS")
-fi
-
-# Ensure Tailscale isn't overriding DNS
-if /usr/local/bin/tailscale dns status 2>/dev/null | grep -q "Tailscale DNS: enabled"; then
-  /usr/local/bin/tailscale set --accept-dns=false 2>/dev/null
-  fixes+=("disabled Tailscale DNS override")
-fi
-
-# Sync the MagicDNS search domain with Tailscale's real state (shared script,
-# also runs at boot). Called unconditionally: the script decides add vs remove
-# itself, and guarding on "ts.net absent" skipped the one case worth fixing by
-# hand, where the key is present but the tunnel is down and DNS is blacked out.
-before=$(scutil --dns 2>/dev/null | grep -c "ts.net")
-sudo "$DIR/bin/tailscale-search-domain"
-after=$(scutil --dns 2>/dev/null | grep -c "ts.net")
-if [[ "$before" -eq 0 && "$after" -gt 0 ]]; then
-  fixes+=("added MagicDNS search domain")
-elif [[ "$before" -gt 0 && "$after" -eq 0 ]]; then
-  fixes+=("removed stale MagicDNS search domain")
-fi
-
-# Flush cache
 sudo dscacheutil -flushcache
 sudo killall -HUP mDNSResponder 2>/dev/null
 
-# Verify MagicDNS
-if /usr/local/bin/tailscale status &>/dev/null && ! dig "$(hostname -s)" +short +time=2 +tries=1 &>/dev/null; then
-  fixes+=("MagicDNS not resolving")
-fi
+scutil --dns 2>/dev/null | grep -q "nameserver.*100\.100\.100\.100" || fixes+=("resolver is NOT 100.100.100.100; is Tailscale connected?")
+dig +short +time=2 +tries=1 example.com >/dev/null 2>&1 || fixes+=("public names not resolving")
+dig +short +time=2 +tries=1 "$(hostname -s)" >/dev/null 2>&1 || fixes+=("MagicDNS not resolving")
 
 if [[ ${#fixes[@]} -eq 0 ]]; then
-  echo "DNS OK (NextDNS + MagicDNS)"
+  echo "DNS OK (Tailscale -> NextDNS, MagicDNS)"
 else
-  echo "Fixed: ${fixes[*]}"
+  echo "Fixed/found: ${fixes[*]}"
 fi

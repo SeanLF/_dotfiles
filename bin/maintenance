@@ -251,10 +251,6 @@ step_claude_plugins() {
 # script), and `agy update` re-fetches the full ~42MB tarball even when current.
 # Skip it here.
 
-# NextDNS is installed via Homebrew, so `brew upgrade` above already handles it.
-# The CLI's own `nextdns upgrade` subcommand can't overwrite a brew-managed
-# binary ("Cannot detect running environment") — brew owns the install path.
-
 step_mise() {
   step "mise"
   # Scope GITHUB_TOKEN to just this step so it doesn't leak to other tools.

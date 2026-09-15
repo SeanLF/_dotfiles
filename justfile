@@ -30,7 +30,7 @@ test:
     bash tests/test-review-gate.sh
     bash tests/test-codex-hooks.sh
     bash tests/test-codex-config.sh
-    bash tests/test-tailscale-dns.sh
+    bash tests/test-raycast-dns.sh
     python3 .claude/hooks/test-hooks.py
 
 # Audit the machine for drift without making changes
