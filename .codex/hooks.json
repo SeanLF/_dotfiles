@@ -29,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/notify.sh working",
+            "command": "~/.claude/hooks/steer.sh working",
             "timeout": 5
           }
         ]
@@ -40,7 +40,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/notify.sh approval",
+            "command": "~/.claude/hooks/steer.sh approval",
             "timeout": 5
           }
         ]
@@ -51,7 +51,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/on-stop.sh",
+            "command": "~/Developer/_dotfiles/bin/review-gate --stop",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/steer.sh done",
             "timeout": 10
           }
         ]
@@ -62,7 +67,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/notify.sh end",
+            "command": "~/.claude/hooks/steer.sh end",
             "timeout": 2
           }
         ]

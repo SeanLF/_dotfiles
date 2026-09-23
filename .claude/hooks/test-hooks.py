@@ -92,25 +92,25 @@ for cmd, label in [
     print(f"{'ok  ' if both else 'FAIL'} {label}")
 
 print()
-print("=== notify.sh: a turn with background work running is not 'done' ===")
+print("=== steer.sh: Stop with a subagent running is not 'done' ===")
 import os
 import tempfile
 
-NOTIFY = pathlib.Path(__file__).parent / "notify.sh"
+STEER = pathlib.Path(__file__).parent / "steer.sh"
 
 
 def steer_state(event, running, kind="subagent"):
     with tempfile.TemporaryDirectory() as d:
         shims = pathlib.Path(d, "bin")
         shims.mkdir()
-        # Nothing may reach the real Steer, Ghostty or Notification Centre.
+        # Nothing may reach the real Steer.
         for tool in ("pgrep", "open", "osascript", "logger"):
             (shims / tool).write_text("#!/bin/sh\nexit 1\n")
             (shims / tool).chmod(0o755)
         tasks = [{"id": "t", "type": kind, "status": "running"}] if running else []
-        env = dict(os.environ, PATH=f"{shims}:{os.environ['PATH']}", NOTIFY_STATE_DIR=d + "/state", NOTIFY_TTY="/dev/null")
+        env = dict(os.environ, PATH=f"{shims}:{os.environ['PATH']}", STEER_STATE_DIR=d + "/state")
         subprocess.run(
-            [str(NOTIFY), event],
+            [str(STEER), event],
             input=json.dumps({"session_id": "tst", "cwd": d, "background_tasks": tasks}),
             env=env,
             capture_output=True,
@@ -125,7 +125,7 @@ def steer_state(event, running, kind="subagent"):
 for event, running, kind, want in [
     ("done", False, "subagent", "done"),
     ("done", True, "subagent", "working"),
-    ("idle", True, "subagent", "working"),
+    ("idle", True, "subagent", "idle"),
     ("approval", True, "subagent", "approval"),
     ("done", True, "shell", "done"),
     ("idle", True, "shell", "idle"),

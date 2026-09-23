@@ -62,18 +62,6 @@ stop() { # $1 = stop_hook_active (true/false), $2 = background_tasks JSON (defau
     (cd / && "${REVIEW_GATE_BIN:-$ROOT/bin/review-gate}" --stop 2>/dev/null))
   if [ -z "$out" ]; then echo allow; else printf '%s' "$out" | jq -r '.decision // "allow"'; fi
 }
-# The Stop dispatcher with a stub notifier: "block", "notified" or "silent".
-on_stop() {
-  local out
-  rm -f "$SANDBOX/notified"
-  out=$(printf '{"hook_event_name":"Stop","cwd":"%s","stop_hook_active":false,"background_tasks":[]}' "$PWD" |
-    NOTIFY_BIN="$SANDBOX/notify-stub" "$ROOT/.claude/hooks/on-stop.sh" 2>/dev/null)
-  if [ "$(printf '%s' "$out" | jq -r '.decision // empty' 2>/dev/null)" = block ]; then
-    echo block
-  elif [ -f "$SANDBOX/notified" ]; then
-    echo notified
-  else echo silent; fi
-}
 pending() {
   "${REVIEW_GATE_BIN:-$ROOT/bin/review-gate}" --pending >/dev/null 2>&1
   echo $?
@@ -110,9 +98,6 @@ EOF
   git init -q --bare "$SANDBOX/remote.git"
   git remote add origin "$SANDBOX/remote.git"
   human git push -qu origin HEAD >/dev/null 2>&1
-  # shellcheck disable=SC2016 # $1 belongs to the stub, not this shell
-  printf '#!/bin/sh\ncat >/dev/null; echo "$1" >"%s/notified"\n' "$SANDBOX" >"$SANDBOX/notify-stub"
-  chmod +x "$SANDBOX/notify-stub"
   rm -f "$(git rev-parse --git-dir)/claude-review-force"
 }
 
@@ -130,14 +115,11 @@ run_cases() {
   check "ending the turn is blocked while HEAD is pending" "$(stop false)" block
   check "a stop already continued once by this hook is let through" "$(stop true)" allow
   check "a later turn is not blocked again for the same commit" "$(stop false)" allow
-  rm -f "$(git rev-parse --git-dir)/claude-stop-nudged"
-  check "a blocked stop sends no 'finished' notification" "$(on_stop)" block
   check "unreviewed push is refused" "$(push)" 1
 
   review pr-review-toolkit:code-reviewer # clean tree, unpushed range
   check "a review of HEAD clears the pending state" "$(pending)" 0
   check "ending the turn is allowed once reviewed" "$(stop false)" allow
-  check "a stop the gate lets through notifies" "$(on_stop)" notified
   check "push after a review of the committed range passes" "$(push)" 0
 
   # The Codex reviewer role clears the gate the way the Claude reviewers do.
@@ -361,8 +343,8 @@ check "record-review is wired to SubagentStop" \
   "$(jq -r '[.hooks.SubagentStop[]?.hooks[]?.command] | map(select(test("record-review"))) | length' "$SETTINGS")" 1
 check "record-review is NOT wired to PostToolUse" \
   "$(jq -r '[.hooks.PostToolUse[]?.hooks[]?.command] | map(select(test("record-review"))) | length' "$SETTINGS")" 0
-check "Stop runs one dispatcher, so the gate decides before anything notifies" \
-  "$(jq -r '[.hooks.Stop[]?.hooks[]?.command]' "$SETTINGS" | jq -c .)" '["~/.claude/hooks/on-stop.sh"]'
+check "review-gate --stop is wired to Stop" \
+  "$(jq -r '[.hooks.Stop[]?.hooks[]?.command] | map(select(test("review-gate --stop"))) | length' "$SETTINGS")" 1
 check "nothing gates edits mid-task" \
   "$(jq -r '[.hooks.PreToolUse[]?.hooks[]?.command] | map(select(test("pending-review-guard"))) | length' "$SETTINGS")" 0
 check "git push --no-verify is denied in both flag positions" \

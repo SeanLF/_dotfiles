@@ -22,8 +22,8 @@ at the end of the turn, never mid-task. One record: stamps in
 
 Default reviewer is `/code-review medium`, Claude Code's own review, which runs as
 a forked `general-purpose` subagent; `record-review` recognises it by the
-`/code-review` task description in the hook's `background_tasks` (undocumented as
-far as checked, so if the field goes, the fork simply stops counting).
+`/code-review` task description in `background_tasks`, which Stop and
+SubagentStop receive per the hooks reference.
 `feature-dev:code-reviewer` (Sonnet, read-only) is the cheap alternative;
 `adversarial-reviewer` (Opus) before a push. A Stop while a reviewer is already
 running in the background is let through.
