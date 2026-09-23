@@ -1,25 +1,14 @@
 #!/bin/bash
-# Review gate for agent-made changes. Keys on the marker each harness puts in
-# its shell environment (CLAUDECODE=1 for Claude Code, CODEX_THREAD_ID for
-# Codex): a speed bump for an honest agent, not a boundary.
+# Review gate for agent commits: a speed bump for an honest agent, not a boundary.
+# Keys on CLAUDECODE=1 (Claude Code) or CODEX_THREAD_ID (Codex).
 #
-#   review-gate                        pre-commit: advisory, always exits 0
-#   review-gate --pending              exit 1 while HEAD is a Claude commit no
-#                                      reviewer has seen
-#   review-gate --stop                 Stop hook: the same check, as a block on
-#                                      ending the turn (hook JSON on stdin)
-#   review-gate --push LOCAL REMOTE    exit 1 unless every commit in REMOTE..LOCAL
-#                                      was reviewed, individually or as a range
-#   review-gate --hash                 print the content hashes record-review stores
-#   review-gate --range                print the unpushed commits a review covers
+#   review-gate --pending              exit 1 while HEAD is an unreviewed agent commit
+#   review-gate --stop                 Stop hook: block ending the turn once per such commit
+#   review-gate --push LOCAL REMOTE    exit 1 unless every commit in the push is stamped
+#   review-gate --range                print the unpushed commits (record-review stamps these)
 #
-# Files in the common git dir:
-#   claude-review             hashes of what the last reviewer saw
-#   claude-reviewed-commits   one sha per line, commits a reviewer has seen
-#   claude-pending-review     sha of a Claude commit awaiting review (per worktree)
-#   claude-staged-reviewed    pre-commit found the staged content reviewed (per worktree)
-#   claude-stop-nudged        sha the Stop hook already blocked a turn for (per worktree)
-#   claude-review-force       escape hatch, consumed by whichever gate meets it
+# State: claude-reviewed-commits and claude-review-force in the common git dir;
+# claude-pending-review and claude-stop-nudged per worktree.
 set -uo pipefail
 
 # Never name a variable GIT_DIR: git exports it into hooks inside a linked
@@ -27,14 +16,6 @@ set -uo pipefail
 
 agent_session() { [ "${CLAUDECODE:-}" = "1" ] || [ -n "${CODEX_THREAD_ID:-}" ]; }
 
-# No HEAD before the first commit; `git diff HEAD` fatals but still hashes empty input.
-diff_base() {
-  git rev-parse -q --verify HEAD 2>/dev/null ||
-    git hash-object -t tree /dev/null
-}
-
-# Start of the range a push would send: the remote tip when known, else the
-# fork point from the upstream or default branch, else the empty tree.
 range_base() { # $1 = local commit, $2 = remote sha or empty
   local up b
   if [ -n "${2:-}" ]; then
@@ -43,30 +24,12 @@ range_base() { # $1 = local commit, $2 = remote sha or empty
   if up=$(git rev-parse -q --verify '@{upstream}' 2>/dev/null); then
     git merge-base "$up" "$1" 2>/dev/null && return
   fi
-  # Remote-tracking refs only: a local main IS the branch being pushed, and
-  # its merge-base with itself made the first push of a repo hash empty.
+  # Remote-tracking refs only: a local main IS the branch being pushed.
   for b in origin/HEAD origin/main origin/master; do
     git merge-base "$b" "$1" 2>/dev/null && return
   done
   git hash-object -t tree /dev/null
 }
-
-digest() { shasum -a 256 | cut -c1-16; }
-
-# --no-prefix: diff.mnemonicPrefix labels worktree and index diffs differently,
-# so identical content would hash differently.
-worktree_hash() { git diff --no-prefix "$(diff_base)" 2>/dev/null | digest; }
-staged_hash() { git diff --no-prefix --cached "$(diff_base)" 2>/dev/null | digest; }
-range_hash() { git diff --no-prefix "$(range_base HEAD)" 2>/dev/null | digest; }
-rangehead_hash() { git diff --no-prefix "$(range_base HEAD)" HEAD 2>/dev/null | digest; }
-
-EMPTY_DIGEST=$(printf '' | digest)
-
-if [ "${1:-}" = "--hash" ]; then
-  printf 'worktree=%s\nstaged=%s\nrange=%s\nrangehead=%s\n' \
-    "$(worktree_hash)" "$(staged_hash)" "$(range_hash)" "$(rangehead_hash)"
-  exit 0
-fi
 
 if [ "${1:-}" = "--range" ]; then
   head=$(git rev-parse -q --verify HEAD 2>/dev/null) || exit 0
@@ -74,8 +37,7 @@ if [ "${1:-}" = "--range" ]; then
   exit 0
 fi
 
-# A Stop hook gets its cwd in the JSON, and must let a stop through once it has
-# already sent the model back, or a model that won't review loops forever.
+# stop_hook_active: the model was already sent back once; blocking again loops.
 if [ "${1:-}" = "--stop" ]; then
   command -v jq >/dev/null 2>&1 || exit 0
   input=$(cat)
@@ -84,8 +46,6 @@ if [ "${1:-}" = "--stop" ]; then
   if [ -n "$cwd" ]; then cd "$cwd" 2>/dev/null || exit 0; fi
 fi
 
-# --git-common-dir so a linked worktree and the main tree agree on where the
-# record lives; --git-dir for in-progress state, which is per-worktree.
 COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null) || exit 0
 COMMON_DIR=$(cd "$COMMON_DIR" && pwd) || exit 0
 PRIVATE_DIR=$(git rev-parse --git-dir 2>/dev/null) || exit 0
@@ -95,41 +55,34 @@ if [ -n "$(git rev-parse --show-superproject-working-tree 2>/dev/null)" ]; then
   exit 0
 fi
 
-ARTIFACT="$COMMON_DIR/claude-review"
 STAMPS="$COMMON_DIR/claude-reviewed-commits"
 PENDING="$PRIVATE_DIR/claude-pending-review"
-STAGED_OK="$PRIVATE_DIR/claude-staged-reviewed"
 NUDGED="$PRIVATE_DIR/claude-stop-nudged"
 FORCE="$COMMON_DIR/claude-review-force"
-recorded() { sed -n "s/^$1=//p" "$ARTIFACT" 2>/dev/null; }
 stamped() { grep -qx "$1" "$STAMPS" 2>/dev/null; }
 
 reviewers() {
   cat <<'EOF'
 Running any ONE of these clears the gate (exact subagent_type, the prefix matters):
+  feature-dev:code-reviewer                 <- Sonnet; the default per-turn tier
   pr-review-toolkit:code-reviewer
   pr-review-toolkit:code-simplifier
   pr-review-toolkit:silent-failure-hunter   <- if error handling changed
   code-simplifier:code-simplifier
-  feature-dev:code-reviewer                 <- Sonnet; the cheap per-commit tier
-  adversarial-reviewer                      <- refutes rather than confirms; worth running last
+  adversarial-reviewer                      <- Opus; before a push, not every turn
   reviewer                                  <- Codex: spawn_agent with agent_type "reviewer"
 
 EOF
 }
 
-# ---- end-of-turn gate ------------------------------------------------------
 if [ "${1:-}" = "--pending" ] || [ "${1:-}" = "--stop" ]; then
   head=$(git rev-parse -q --verify HEAD 2>/dev/null) || exit 0
-  pending=$(cat "$PENDING" 2>/dev/null)
-  [ -n "$pending" ] && [ "$pending" = "$head" ] || exit 0
+  [ "$(cat "$PENDING" 2>/dev/null)" = "$head" ] || exit 0
   if [ -f "$FORCE" ]; then
     rm -f "$FORCE" "$PENDING"
     echo "$head" >>"$STAMPS"
     exit 0
   fi
-  # One nudge per commit: later turns that commit nothing are not blocked again
-  # for it, and the pre-push gate still owes the review.
   if [ "$1" = "--stop" ]; then
     [ "$(cat "$NUDGED" 2>/dev/null)" = "$head" ] && exit 0
     echo "$head" >"$NUDGED"
@@ -148,7 +101,6 @@ if [ "${1:-}" = "--pending" ] || [ "${1:-}" = "--stop" ]; then
   exit 1
 fi
 
-# ---- pre-push gate ----------------------------------------------------------
 if [ "${1:-}" = "--push" ]; then
   agent_session || exit 0
   local_sha="${2:-}"
@@ -163,43 +115,18 @@ if [ "${1:-}" = "--push" ]; then
   fi
 
   base=$(range_base "$local_sha" "$remote_sha")
-  current=$(git diff --no-prefix "$base" "$local_sha" 2>/dev/null | digest)
-  [ "$current" = "$EMPTY_DIGEST" ] && exit 0
-
-  if [ "$current" = "$(recorded range)" ] || [ "$current" = "$(recorded rangehead)" ]; then
-    exit 0
-  fi
-
   unstamped=""
   for c in $(git rev-list "$base..$local_sha" 2>/dev/null); do
     stamped "$c" || unstamped="$unstamped ${c:0:7}"
   done
   [ -z "$unstamped" ] && exit 0
 
-  n=$(git diff --name-only "$base" "$local_sha" 2>/dev/null | wc -l | tr -d ' ')
   {
-    printf '\nReview gate. Unreviewed commits in this push:%s (%s file(s) in %s..%s).\n' \
-      "$unstamped" "$n" "${base:0:7}" "${local_sha:0:7}"
-    printf 'Either review each of them, or run one reviewer over the whole branch.\n\n'
+    printf '\nReview gate. Unreviewed commits in this push:%s (%s..%s).\n' \
+      "$unstamped" "${base:0:7}" "${local_sha:0:7}"
+    printf 'Run one reviewer over the whole range.\n\n'
     reviewers
-    printf 'To skip a trivial or purely mechanical change, run this, then push again:\n\n  touch %s\n\n' "$FORCE"
-    printf 'A refused push costs nothing: the commits stay, the review stays valid until the content changes.\n'
+    printf 'To skip a trivial or purely mechanical change, run this, then push again:\n\n  touch %s\n' "$FORCE"
   } >&2
   exit 1
 fi
-
-# ---- pre-commit (advisory) --------------------------------------------------
-agent_session || exit 0
-rm -f "$STAGED_OK"
-for state in CHERRY_PICK_HEAD REVERT_HEAD MERGE_HEAD rebase-merge rebase-apply; do
-  [ -e "$PRIVATE_DIR/$state" ] && exit 0
-done
-
-current=$(staged_hash)
-[ "$current" = "$EMPTY_DIGEST" ] && exit 0
-if [ "$current" = "$(recorded worktree)" ] || [ "$current" = "$(recorded staged)" ]; then
-  touch "$STAGED_OK"
-  exit 0
-fi
-echo "review-gate: committing unreviewed content ($(git diff --cached --name-only | wc -l | tr -d ' ') file(s)); it will need a review before the turn ends." >&2
-exit 0

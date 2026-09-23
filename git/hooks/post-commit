@@ -12,11 +12,7 @@ if [ "${CLAUDECODE:-}" = "1" ] || [ -n "${CODEX_THREAD_ID:-}" ]; then
     [ -e "$PRIVATE_DIR/$state" ] && replaying=1
   done
   if [ -n "$COMMON_DIR" ] && [ "$replaying" = 0 ] && head=$(git rev-parse -q --verify HEAD 2>/dev/null); then
-    if [ -f "$PRIVATE_DIR/claude-staged-reviewed" ]; then
-      # pre-commit found the staged content already reviewed.
-      rm -f "$PRIVATE_DIR/claude-staged-reviewed"
-      echo "$head" >>"$COMMON_DIR/claude-reviewed-commits"
-    elif [ -f "$COMMON_DIR/claude-review-force" ]; then
+    if [ -f "$COMMON_DIR/claude-review-force" ]; then
       # Consumed: the stamp carries the exemption to the push.
       rm -f "$COMMON_DIR/claude-review-force"
       echo "$head" >>"$COMMON_DIR/claude-reviewed-commits"
