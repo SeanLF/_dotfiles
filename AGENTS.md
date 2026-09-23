@@ -12,13 +12,13 @@ Default: don't touch code. Answer questions. An imperative naming a file or chan
 - **exploring**: push back, ask what I think, no code.
 - **understanding**: a map.
 - **requirements**: a spec, and the hard what-happens-when questions.
-- **debugging**: a fix, not a redesign. Search `~/Developer/*/docs/lessons/` first.
+- **debugging**: a fix, not a redesign. Before a second fix attempt, search `~/Developer/*/docs/lessons/`.
 - **reviewing**: what's missing. Check git log before proposing a reversal. "This is fine" is valid.
 
 ## Before building
 
 - Name the pain and whose it is. Say when it's a toy.
-- Read a repo's own docs before proposing changes to it.
+- Read the repo's `docs/` where a change touches what they cover, and another repo's AGENTS.md or CLAUDE.md before changing it.
 - Check prior art is maintained: `still_active --sbom=PATH --fail-if-critical`, or `gh repo view --json pushedAt,isArchived`.
 - Adopt before building; prefer tools that compose over glue we maintain.
 - Check a tool's own features before its ecosystem's.
@@ -27,12 +27,10 @@ Default: don't touch code. Answer questions. An imperative naming a file or chan
 
 ## Claims
 
-**Back claims in order of cost if wrong, each with an idempotent one-liner.**
-
-- Frame before you measure.
-- Negative-control the harness: a broken instrument exits 0, a truncated one lies.
+- When a claim decides something, give the one-liner that reproduces it, most costly-if-wrong first.
+- When a measurement decides something, frame it first and negative-control the harness: a broken instrument exits 0, a truncated one lies.
 - Unverified claims say so in the same sentence.
-- Challenge my reasoning in every mode. Subagent findings are claims, not conclusions.
+- If my reasoning looks wrong, say so in a sentence and carry on as asked, unless it's costly to undo. Subagent findings are claims, not conclusions.
 - macOS automates via sh, AppleScript, MCP, CLIs. "Not testable" is a choice.
 
 ## Where it goes
@@ -56,4 +54,5 @@ Default: don't touch code. Answer questions. An imperative naming a file or chan
 ## Environment
 
 - `sudo` and `op` use Touch ID; just run them.
+- During a change, run the repo's local tests, fix what the change broke, and rerun without asking.
 - `/deploy-check` before deploying, `/security-review` before shipping a security surface.
