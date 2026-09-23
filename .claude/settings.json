@@ -78,6 +78,15 @@
             "command": "/opt/homebrew/bin/ccpool warn"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/scope-tripwire.sh"
+          }
+        ]
       }
     ],
     "PreToolUse": [

@@ -31,6 +31,7 @@ test:
     bash tests/test-codex-hooks.sh
     bash tests/test-codex-config.sh
     bash tests/test-raycast-dns.sh
+    bash tests/test-scope-tripwire.sh
     python3 .claude/hooks/test-hooks.py
 
 # Audit the machine for drift without making changes
