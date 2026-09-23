@@ -144,6 +144,7 @@ cask "zed"
 # Video communication and virtual meeting platform
 cask "zoom"
 mas "1Password for Safari", id: 1569813296
+mas "Asobi", id: 6754204833
 mas "Consent-O-Matic", id: 1606897889
 mas "Flighty", id: 1358823008
 mas "TestFlight", id: 899247664

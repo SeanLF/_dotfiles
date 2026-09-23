@@ -393,7 +393,6 @@ step_brewfile() {
   if $CHECK_ONLY; then
     info "(skipped in --check mode)"
   elif [[ -f "$BREWFILE" ]]; then
-    # --describe is deprecated; descriptions are included by default now
     try brew bundle dump --file="$BREWFILE" --force
     ok "Brewfile updated"
   else

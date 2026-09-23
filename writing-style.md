@@ -28,5 +28,6 @@
 - No "genuinely", "honestly", "straightforward"
 - Never sounds like a LinkedIn post
 - No filler: "It's worth noting", "Interestingly", "In conclusion"
+- No decorative metaphor where a literal term exists: "a parameter worth varying", not "a dial worth turning". A figure that adds meanings I didn't choose is imprecise, not vivid
 - No false enthusiasm or forced warmth
 - No hedging chains: "I think perhaps it might be worth considering"
