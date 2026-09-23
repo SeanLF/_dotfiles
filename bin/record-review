@@ -11,17 +11,9 @@ command -v jq >/dev/null 2>&1 || exit 0
 INPUT=$(cat)
 AGENT=$(printf '%s' "$INPUT" | jq -r '.tool_input.subagent_type // .agent_type // empty' 2>/dev/null)
 CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)
+DESC=$(printf '%s' "$INPUT" | jq -r '.agent_id as $id | [.background_tasks[]? | select(.id == $id) | .description][0] // empty' 2>/dev/null)
 
-case "$AGENT" in
-  feature-dev:code-reviewer | \
-    pr-review-toolkit:code-reviewer | \
-    pr-review-toolkit:code-simplifier | \
-    pr-review-toolkit:silent-failure-hunter | \
-    code-simplifier:code-simplifier | \
-    adversarial-reviewer | \
-    reviewer) ;;
-  *) exit 0 ;;
-esac
+"$(dirname "$0")/review-gate" --reviewer "$AGENT" "$DESC" || exit 0
 
 if [ -n "$CWD" ] && ! cd "$CWD" 2>/dev/null; then
   exit 0

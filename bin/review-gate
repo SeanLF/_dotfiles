@@ -31,6 +31,24 @@ range_base() { # $1 = local commit, $2 = remote sha or empty
   git hash-object -t tree /dev/null
 }
 
+# A forked /code-review reports agent_type general-purpose; its task description
+# is the only thing that says it is a review.
+is_reviewer() { # $1 = agent_type, $2 = task description
+  case "$1" in
+    feature-dev:code-reviewer | pr-review-toolkit:code-reviewer | pr-review-toolkit:code-simplifier | \
+      pr-review-toolkit:silent-failure-hunter | code-simplifier:code-simplifier | adversarial-reviewer | reviewer)
+      return 0
+      ;;
+    general-purpose) case "${2:-}" in /code-review*) return 0 ;; esac ;;
+  esac
+  return 1
+}
+
+if [ "${1:-}" = "--reviewer" ]; then
+  is_reviewer "${2:-}" "${3:-}"
+  exit $?
+fi
+
 if [ "${1:-}" = "--range" ]; then
   head=$(git rev-parse -q --verify HEAD 2>/dev/null) || exit 0
   git rev-list "$(range_base "$head")..$head" 2>/dev/null
@@ -63,8 +81,9 @@ stamped() { grep -qx "$1" "$STAMPS" 2>/dev/null; }
 
 reviewers() {
   cat <<'EOF'
-Running any ONE of these clears the gate (exact subagent_type, the prefix matters):
-  feature-dev:code-reviewer                 <- Sonnet; the default per-turn tier
+Running any ONE of these clears the gate (agents by exact subagent_type):
+  /code-review medium                       <- the default: Skill tool, skill "code-review"
+  feature-dev:code-reviewer                 <- Sonnet, read-only
   pr-review-toolkit:code-reviewer
   pr-review-toolkit:code-simplifier
   pr-review-toolkit:silent-failure-hunter   <- if error handling changed
@@ -84,6 +103,10 @@ if [ "${1:-}" = "--pending" ] || [ "${1:-}" = "--stop" ]; then
     exit 0
   fi
   if [ "$1" = "--stop" ]; then
+    # A reviewer already running will stamp the commit when it finishes.
+    while IFS=$'\t' read -r t d; do
+      is_reviewer "$t" "$d" && exit 0
+    done < <(printf '%s' "$input" | jq -r '.background_tasks[]? | select(.status == "running") | [.agent_type // "", .description // ""] | @tsv' 2>/dev/null)
     [ "$(cat "$NUDGED" 2>/dev/null)" = "$head" ] && exit 0
     echo "$head" >"$NUDGED"
   fi

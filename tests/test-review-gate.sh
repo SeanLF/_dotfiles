@@ -35,6 +35,15 @@ no() {
 }
 check() { if [ "$2" = "$3" ]; then ok "$1"; else no "$1 (want $3, got $2)"; fi; }
 
+# A forked /code-review reports agent_type general-purpose; only its task
+# description says what it is.
+unnudge() { rm -f "$(git rev-parse --git-dir)/claude-stop-nudged"; }
+fork_review() { # $1 = task description
+  jq -cn --arg d "$SANDBOX/repo" --arg desc "$1" \
+    '{hook_event_name:"SubagentStop",agent_id:"f1",agent_type:"general-purpose",cwd:$d,
+      background_tasks:[{id:"f1",type:"subagent",status:"running",description:$desc,agent_type:"general-purpose"}]}' |
+    "$ROOT/bin/record-review" >/dev/null 2>&1
+}
 review() { printf '{"agent_type":"%s","cwd":"%s"}' "$1" "$SANDBOX/repo" | "$ROOT/bin/record-review" >/dev/null 2>&1; }
 commit() {
   git commit -qm "feat: change" >/dev/null 2>&1
@@ -46,10 +55,10 @@ push() {
 }
 hatch() { touch "$(git rev-parse --git-common-dir)/claude-review-force"; }
 # The Stop hook's verdict. An allowed stop prints nothing, so default outside jq.
-stop() { # $1 = stop_hook_active (true/false)
+stop() { # $1 = stop_hook_active (true/false), $2 = background_tasks JSON (default [])
   local out
   # Run from /, so the hook has to find the repo through the JSON cwd.
-  out=$(printf '{"hook_event_name":"Stop","cwd":"%s","stop_hook_active":%s}' "$PWD" "${1:-false}" |
+  out=$(printf '{"hook_event_name":"Stop","cwd":"%s","stop_hook_active":%s,"background_tasks":%s}' "$PWD" "${1:-false}" "${2:-[]}" |
     (cd / && "${REVIEW_GATE_BIN:-$ROOT/bin/review-gate}" --stop 2>/dev/null))
   if [ -z "$out" ]; then echo allow; else printf '%s' "$out" | jq -r '.decision // "allow"'; fi
 }
@@ -120,6 +129,22 @@ run_cases() {
     "$ROOT/bin/record-review" >/dev/null 2>&1
   check "a Codex SubagentStop for the reviewer role clears pending" "$(pending)" 0
   check "and the push passes" "$(push)" 0
+
+  echo "fork-reviewed" >>file.txt && git add -A && commit >/dev/null
+  fork_review "Explore the repo"
+  check "a general-purpose fork that is not /code-review does not clear" "$(pending)" 1
+  unnudge
+  check "a stop while a reviewer runs in the background is let through" \
+    "$(stop false '[{"id":"r1","type":"subagent","status":"running","agent_type":"feature-dev:code-reviewer"}]')" allow
+  unnudge
+  check "a stop while /code-review runs is let through" \
+    "$(stop false '[{"id":"f1","type":"subagent","status":"running","agent_type":"general-purpose","description":"/code-review medium"}]')" allow
+  unnudge
+  check "a stop while only a non-reviewer runs is still blocked" \
+    "$(stop false '[{"id":"x1","type":"subagent","status":"running","agent_type":"general-purpose","description":"Explore"}]')" block
+  fork_review "/code-review medium"
+  check "a forked /code-review clears pending" "$(pending)" 0
+  check "and its push passes" "$(push)" 0
 
   # The in-flow cycle: commit, review that commit, commit, review, push. No
   # whole-range review ever runs; the per-commit stamps carry the push.

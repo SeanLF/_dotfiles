@@ -20,8 +20,13 @@ at the end of the turn, never mid-task. One record: stamps in
   one push through.
 - `git push --no-verify` is refused by `permissions.deny` (Claude Code only).
 
-Default reviewer is `feature-dev:code-reviewer` (Sonnet); `adversarial-reviewer`
-(Opus) before a push. Reviewer agents pin their model.
+Default reviewer is `/code-review medium`, Claude Code's own review, which runs as
+a forked `general-purpose` subagent; `record-review` recognises it by the
+`/code-review` task description in the hook's `background_tasks` (undocumented as
+far as checked, so if the field goes, the fork simply stops counting).
+`feature-dev:code-reviewer` (Sonnet, read-only) is the cheap alternative;
+`adversarial-reviewer` (Opus) before a push. A Stop while a reviewer is already
+running in the background is let through.
 
 ## Why this shape
 
