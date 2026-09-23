@@ -61,4 +61,4 @@ git history before this commit.
 ## Related
 
 - docs/lessons/design-patterns/a-watchdog-that-blames-the-network-needs-a-probe-that-bypasses-the-component.md
-- tests/probe-dns-race.sh reproduces the side-by-side measurement.
+- The side-by-side probe needs the CLI, so it was deleted; recover it with `git show a88625a:tests/probe-dns-race.sh`.
