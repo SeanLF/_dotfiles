@@ -1,6 +1,6 @@
 # Claude cost levers (for Claude Code)
 
-What Claude Code can do mid-task to save the weekly pool. Background and calibration: `usage-economics-findings.md` (not needed to act).
+What Claude Code can do mid-task to save the weekly pool.
 
 ## Levers Claude controls
 
