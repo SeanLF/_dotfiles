@@ -1,7 +1,8 @@
 {
   "cleanupPeriodDays": 100000,
   "permissions": {
-    "defaultMode": "auto"
+    "defaultMode": "auto",
+    "deny": ["Bash(git push --no-verify *)", "Bash(git push * --no-verify*)"]
   },
   "disableClaudeAiConnectors": true,
   "hooks": {

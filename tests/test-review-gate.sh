@@ -55,8 +55,9 @@ hatch() { touch "$(git rev-parse --git-common-dir)/claude-review-force"; }
 # The Stop hook's verdict. An allowed stop prints nothing, so default outside jq.
 stop() { # $1 = stop_hook_active (true/false)
   local out
+  # Run from /, so the hook has to find the repo through the JSON cwd.
   out=$(printf '{"hook_event_name":"Stop","cwd":"%s","stop_hook_active":%s}' "$PWD" "${1:-false}" |
-    "${REVIEW_GATE_BIN:-$ROOT/bin/review-gate}" --stop 2>/dev/null)
+    (cd / && "${REVIEW_GATE_BIN:-$ROOT/bin/review-gate}" --stop 2>/dev/null))
   if [ -z "$out" ]; then echo allow; else printf '%s' "$out" | jq -r '.decision // "allow"'; fi
 }
 pending() {
@@ -119,6 +120,7 @@ run_cases() {
   check "that commit is now pending review" "$(pending)" 1
   check "ending the turn is blocked while HEAD is pending" "$(stop false)" block
   check "a stop already continued once by this hook is let through" "$(stop true)" allow
+  check "a later turn is not blocked again for the same commit" "$(stop false)" allow
   check "unreviewed push is refused" "$(push)" 1
 
   review pr-review-toolkit:code-reviewer # clean tree, unpushed range

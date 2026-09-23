@@ -18,6 +18,7 @@
 #   claude-reviewed-commits   one sha per line, commits a reviewer has seen
 #   claude-pending-review     sha of a Claude commit awaiting review (per worktree)
 #   claude-staged-reviewed    pre-commit found the staged content reviewed (per worktree)
+#   claude-stop-nudged        sha the Stop hook already blocked a turn for (per worktree)
 #   claude-review-force       escape hatch, consumed by whichever gate meets it
 set -uo pipefail
 
@@ -98,6 +99,7 @@ ARTIFACT="$COMMON_DIR/claude-review"
 STAMPS="$COMMON_DIR/claude-reviewed-commits"
 PENDING="$PRIVATE_DIR/claude-pending-review"
 STAGED_OK="$PRIVATE_DIR/claude-staged-reviewed"
+NUDGED="$PRIVATE_DIR/claude-stop-nudged"
 FORCE="$COMMON_DIR/claude-review-force"
 recorded() { sed -n "s/^$1=//p" "$ARTIFACT" 2>/dev/null; }
 stamped() { grep -qx "$1" "$STAMPS" 2>/dev/null; }
@@ -126,8 +128,14 @@ if [ "${1:-}" = "--pending" ] || [ "${1:-}" = "--stop" ]; then
     echo "$head" >>"$STAMPS"
     exit 0
   fi
+  # One nudge per commit: later turns that commit nothing are not blocked again
+  # for it, and the pre-push gate still owes the review.
+  if [ "$1" = "--stop" ]; then
+    [ "$(cat "$NUDGED" 2>/dev/null)" = "$head" ] && exit 0
+    echo "$head" >"$NUDGED"
+  fi
   msg=$(
-    printf 'Review gate. Commit %s has not been reviewed. Before finishing, run one reviewer over what this turn committed:\n\n' "${head:0:7}"
+    printf 'Review gate. Commit %s has not been reviewed. Before finishing, run one reviewer over the unpushed commits:\n\n' "${head:0:7}"
     printf '  git log -p %s..%s\n\n' "$(range_base "$head" | cut -c1-7)" "${head:0:7}"
     reviewers
     printf 'Address what it finds in new commits. For a trivial or purely mechanical commit instead:\n\n  touch %s\n' "$FORCE"
@@ -193,5 +201,5 @@ if [ "$current" = "$(recorded worktree)" ] || [ "$current" = "$(recorded staged)
   touch "$STAGED_OK"
   exit 0
 fi
-echo "review-gate: committing unreviewed content ($(git diff --cached --name-only | wc -l | tr -d ' ') file(s)); it will need a review before the next edit." >&2
+echo "review-gate: committing unreviewed content ($(git diff --cached --name-only | wc -l | tr -d ' ') file(s)); it will need a review before the turn ends." >&2
 exit 0

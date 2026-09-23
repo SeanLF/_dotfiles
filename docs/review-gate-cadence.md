@@ -22,6 +22,13 @@ run to a stated completion; the end of the turn is that point. Also cut:
 `pre-pr-review.sh` (duplicated the pre-push gate), `scope-tripwire.sh`, the
 adherence meters, `guard-replay.py`.
 
+Limits, stated so nobody mistakes the gate for a boundary: the Stop hook
+nudges once per commit (`claude-stop-nudged`), then lets later turns end, and
+only checks the session's cwd, so a `git -C other-repo commit` is caught only at
+that repo's push. With the bypass guard gone, `git push --no-verify` is refused
+by a `permissions.deny` rule in `.claude/settings.json` instead (Claude only;
+Codex has no equivalent rule here).
+
 ## Decision
 
 Two gates, one record (`bin/review-gate`, `bin/record-review`):
