@@ -33,22 +33,14 @@ env -u CLAUDECODE -u CODEX_THREAD_ID git commit -qm "chore: base"
 
 out=$(codex exec --skip-git-repo-check --dangerously-bypass-hook-trust \
   --sandbox workspace-write --ephemeral -m gpt-5.5 -c model_reasoning_effort=low \
-  'Do exactly this, no commentary: 1) run the shell command: echo probe >> file.txt; 2) run the shell command: git commit -a --no-verify -m "feat: probe"; 3) paste the complete tool result of step 2 verbatim, including any denial or hook message, then print PROBE-END.' \
+  'Do exactly this, no commentary: 1) run the shell command: rg -rn base file.txt; 2) paste the complete tool result of step 1 verbatim, including any denial or hook message, then print PROBE-END.' \
   </dev/null 2>&1)
 
 printf '%s\n' "$out" | tail -20
 echo "----------------------------------------"
-if printf '%s' "$out" | grep -q 'skips the git hooks'; then
-  echo "PASS: Codex ran hook-bypass-guard and the deny reached the model"
-  rc=0
-else
-  echo "FAIL: no deny text in the transcript; Codex did not run the guard or its payload shape changed"
-  rc=1
+if printf '%s' "$out" | grep -q 'is --replace, not --recursive'; then
+  echo "PASS: Codex ran search-tool-guard and the deny reached the model"
+  exit 0
 fi
-if git log --oneline | grep -q probe; then
-  echo "FAIL: the --no-verify commit landed"
-  rc=1
-else
-  echo "PASS: no --no-verify commit landed"
-fi
-exit "$rc"
+echo "FAIL: no deny text in the transcript; Codex did not run the guard or its payload shape changed"
+exit 1

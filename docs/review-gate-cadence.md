@@ -2,6 +2,26 @@
 
 Date: 2026-09-01. Stale by default; re-measure before revisiting.
 
+## 2026-09-23: review at the end of the turn, not before the next edit
+
+Superseded in part. The pending commit no longer blocks edits and further
+commits (`pending-review-guard.sh` is gone). A Stop hook, `review-gate --stop`,
+blocks the turn from ending while HEAD is an unreviewed agent commit, once per
+turn (`stop_hook_active` lets the second stop through). One reviewer over what
+the turn committed clears it, and `record-review` stamps the whole unpushed
+range, so a later hatched commit does not re-list what was reviewed. The
+pre-push gate is unchanged and still the backstop, for Codex and humans alike.
+
+Why: there is no human reviewer, so review has to be automatic, but it does not
+have to be mid-task. The edit guard parsed shell redirects and heredocs to tell
+a write from a read, needed `hook-bypass-guard.sh` (100 assertions) to stop the
+agent routing around it, and stalled a median 7 minutes per denial. Anthropic's
+Opus 5 guidance is to drop mid-task verification scaffolding and let the model
+run to a stated completion; the end of the turn is that point. Also cut:
+`commit-guard.sh` (amend and scratch staging, already in the harness prompt),
+`pre-pr-review.sh` (duplicated the pre-push gate), `scope-tripwire.sh`, the
+adherence meters, `guard-replay.py`.
+
 ## Decision
 
 Two gates, one record (`bin/review-gate`, `bin/record-review`):

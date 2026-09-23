@@ -56,11 +56,8 @@ claude_bash=$(jq -r '.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[]
 codex_bash=$(jq -r '.hooks.PreToolUse[] | select(.matcher == "^Bash$") | .hooks[].command' "$CODEX" | sort)
 check "Bash guards are the same set, in the same order, as Claude's" "$codex_bash" "$claude_bash"
 
-claude_edit=$(jq -r '.hooks.PreToolUse[] | select(.matcher | test("Edit")) | .hooks[].command' "$CLAUDE" | sort)
-codex_edit=$(jq -r '.hooks.PreToolUse[] | select(.matcher | test("apply_patch")) | .hooks[].command' "$CODEX" | sort)
-check "edit guards match Claude's" "$codex_edit" "$claude_edit"
-check "the edit matcher names apply_patch, Codex's edit tool" \
-  "$(jq -r '[.hooks.PreToolUse[].matcher | select(test("apply_patch"))] | length' "$CODEX")" 1
+check "Stop handlers match Claude's" \
+  "$(jq -r '.hooks.Stop[].hooks[].command' "$CODEX")" "$(jq -r '.hooks.Stop[].hooks[].command' "$CLAUDE")"
 
 check "record-review is wired to SubagentStop" \
   "$(jq -r '[.hooks.SubagentStop[]?.hooks[]?.command] | map(select(test("record-review"))) | length' "$CODEX")" 1
@@ -80,8 +77,13 @@ run_event() { # $1 event, $2 tool_name, $3 payload json
   while IFS= read -r cmd; do
     bin=$(expand "$cmd")
     out=$(printf '%s' "$3" | (cd "$SANDBOX/repo" && eval "$bin") 2>/dev/null)
-    if [ -n "$out" ] && [ "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision // empty')" = deny ]; then
+    [ -n "$out" ] || continue
+    if [ "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision // empty')" = deny ]; then
       echo deny
+      return
+    fi
+    if [ "$(printf '%s' "$out" | jq -r '.decision // empty')" = block ]; then
+      echo block
       return
     fi
   done < <(jq -r --arg ev "$1" --arg t "$2" '.hooks[$ev][] | select((.matcher // "") as $m | $m == "" or ($t | test($m))) | .hooks[].command' "$CODEX")
@@ -102,18 +104,11 @@ git init -q "$SANDBOX/repo"
   echo base >file.txt && git add -A
   env -u CLAUDECODE -u CODEX_THREAD_ID git commit -qm "chore: base"
 )
-patch='*** Begin Patch
-*** Update File: file.txt
-@@
-+x
-*** End Patch
-'
+turn_end=$(jq -cn --arg d "$SANDBOX/repo" '{hook_event_name:"Stop",session_id:"s",turn_id:"t",cwd:$d,stop_hook_active:false,last_assistant_message:"done"}')
 
-check "git commit --no-verify is denied" "$(run_event PreToolUse Bash "$(payload Bash 'git commit --no-verify -m "feat: x"')")" deny
-check "clearing the Codex marker is denied" "$(run_event PreToolUse Bash "$(payload Bash 'env -u CODEX_THREAD_ID git commit -m "feat: x"')")" deny
 check "rg -rn is denied (search guard reached)" "$(run_event PreToolUse Bash "$(payload Bash 'rg -rn foo')")" deny
 check "git status is allowed" "$(run_event PreToolUse Bash "$(payload Bash 'git status')")" allow
-check "apply_patch on a clean HEAD is allowed" "$(run_event PreToolUse apply_patch "$(payload apply_patch "$patch")")" allow
+check "ending a turn on a clean HEAD is allowed" "$(run_event Stop "" "$turn_end")" allow
 
 # A Codex commit: post-commit marks HEAD pending under CODEX_THREAD_ID.
 (
@@ -123,18 +118,15 @@ check "apply_patch on a clean HEAD is allowed" "$(run_event PreToolUse apply_pat
 )
 check "post-commit marked the Codex commit pending" \
   "$([ -f "$SANDBOX/repo/.git/claude-pending-review" ] && echo yes || echo no)" yes
-check "apply_patch while HEAD is pending is denied" "$(run_event PreToolUse apply_patch "$(payload apply_patch "$patch")")" deny
-check "a further commit while HEAD is pending is denied" "$(run_event PreToolUse Bash "$(payload Bash 'git commit -m "feat: on top"')")" deny
-# Negative control: a tool no matcher names runs no guard, so the deny above came
-# from the guard and not from the harness.
-check "a tool outside every matcher runs nothing (control)" "$(run_event PreToolUse Read "$(payload Read "$patch")")" allow
+check "ending the turn while HEAD is pending is blocked" "$(run_event Stop "" "$turn_end")" block
+check "edits are never gated mid-task" "$(run_event PreToolUse apply_patch "$(payload apply_patch x)")" allow
 
 # Codex's SubagentStop for the reviewer role clears it, through the manifest.
 stop=$(jq -cn --arg d "$SANDBOX/repo" '{hook_event_name:"SubagentStop",session_id:"s",turn_id:"t",cwd:$d,agent_id:"a1",agent_type:"reviewer",stop_hook_active:false,last_assistant_message:"ok"}')
 run_event SubagentStop reviewer "$stop" >/dev/null
 check "SubagentStop(reviewer) clears the pending commit" \
   "$([ -f "$SANDBOX/repo/.git/claude-pending-review" ] && echo pending || echo clear)" clear
-check "apply_patch is allowed again" "$(run_event PreToolUse apply_patch "$(payload apply_patch "$patch")")" allow
+check "ending the turn is allowed again" "$(run_event Stop "" "$turn_end")" allow
 
 # And a subagent of another role does not.
 (
@@ -161,7 +153,7 @@ if [ -z "${CODEX_HOOKS_SELFTEST:-}" ]; then
   WT=$(mktemp -d)
   git -C "$ROOT" worktree add -q "$WT" HEAD 2>/dev/null
   cp "$0" "$WT/tests/"
-  chmod -x "$WT/.claude/hooks/hook-bypass-guard.sh"
+  chmod -x "$WT/.claude/hooks/search-tool-guard.sh"
   inner=$(CODEX_HOOKS_SELFTEST=1 bash "$WT/tests/$(basename "$0")" 2>&1 | tail -1)
   git -C "$ROOT" worktree remove --force "$WT" 2>/dev/null
   check "a disabled guard in the worktree fails there, not here" \

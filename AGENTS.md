@@ -41,7 +41,7 @@ Default: don't touch code. Answer questions. An imperative naming a file or chan
 
 ## Subagents
 
-- Not mid-task to re-check my own work; the review gates (each commit before the next edit, the range before push) are separate and stand.
+- Not mid-task to re-check my own work; the review gates (a turn that commits, before it ends; the range, before push) are separate and stand.
 - Cheap models at low effort, never cheap at high (`docs/usage-economics.md`).
 - Every agent definition pins a model. Never inherit; the parent may be the most expensive one.
 

@@ -5,7 +5,9 @@
 #
 #   review-gate                        pre-commit: advisory, always exits 0
 #   review-gate --pending              exit 1 while HEAD is a Claude commit no
-#                                      reviewer has seen (the post-commit gate)
+#                                      reviewer has seen
+#   review-gate --stop                 Stop hook: the same check, as a block on
+#                                      ending the turn (hook JSON on stdin)
 #   review-gate --push LOCAL REMOTE    exit 1 unless every commit in REMOTE..LOCAL
 #                                      was reviewed, individually or as a range
 #   review-gate --hash                 print the content hashes record-review stores
@@ -71,6 +73,16 @@ if [ "${1:-}" = "--range" ]; then
   exit 0
 fi
 
+# A Stop hook gets its cwd in the JSON, and must let a stop through once it has
+# already sent the model back, or a model that won't review loops forever.
+if [ "${1:-}" = "--stop" ]; then
+  command -v jq >/dev/null 2>&1 || exit 0
+  input=$(cat)
+  [ "$(printf '%s' "$input" | jq -r '.stop_hook_active // false' 2>/dev/null)" = "true" ] && exit 0
+  cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
+  if [ -n "$cwd" ]; then cd "$cwd" 2>/dev/null || exit 0; fi
+fi
+
 # --git-common-dir so a linked worktree and the main tree agree on where the
 # record lives; --git-dir for in-progress state, which is per-worktree.
 COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null) || exit 0
@@ -104,8 +116,8 @@ Running any ONE of these clears the gate (exact subagent_type, the prefix matter
 EOF
 }
 
-# ---- post-commit gate -------------------------------------------------------
-if [ "${1:-}" = "--pending" ]; then
+# ---- end-of-turn gate ------------------------------------------------------
+if [ "${1:-}" = "--pending" ] || [ "${1:-}" = "--stop" ]; then
   head=$(git rev-parse -q --verify HEAD 2>/dev/null) || exit 0
   pending=$(cat "$PENDING" 2>/dev/null)
   [ -n "$pending" ] && [ "$pending" = "$head" ] || exit 0
@@ -114,13 +126,17 @@ if [ "${1:-}" = "--pending" ]; then
     echo "$head" >>"$STAMPS"
     exit 0
   fi
-  {
-    printf 'Review gate. Commit %s has not been reviewed, and nothing may be built on it until it has.\n' "${head:0:7}"
-    printf 'Edits and further commits in this repo are refused until a reviewer has seen it.\n'
-    printf 'Point the reviewer at the commit: git show %s\n\n' "${head:0:7}"
+  msg=$(
+    printf 'Review gate. Commit %s has not been reviewed. Before finishing, run one reviewer over what this turn committed:\n\n' "${head:0:7}"
+    printf '  git log -p %s..%s\n\n' "$(range_base "$head" | cut -c1-7)" "${head:0:7}"
     reviewers
-    printf 'For a trivial or purely mechanical commit, run this, then retry:\n\n  touch %s\n' "$FORCE"
-  } >&2
+    printf 'Address what it finds in new commits. For a trivial or purely mechanical commit instead:\n\n  touch %s\n' "$FORCE"
+  )
+  if [ "$1" = "--stop" ]; then
+    jq -cn --arg r "$msg" '{decision: "block", reason: $r}'
+    exit 0
+  fi
+  printf '%s\n' "$msg" >&2
   exit 1
 fi
 

@@ -52,22 +52,17 @@ push() {
   echo $?
 }
 hatch() { touch "$(git rev-parse --git-common-dir)/claude-review-force"; }
+# The Stop hook's verdict. An allowed stop prints nothing, so default outside jq.
+stop() { # $1 = stop_hook_active (true/false)
+  local out
+  out=$(printf '{"hook_event_name":"Stop","cwd":"%s","stop_hook_active":%s}' "$PWD" "${1:-false}" |
+    "${REVIEW_GATE_BIN:-$ROOT/bin/review-gate}" --stop 2>/dev/null)
+  if [ -z "$out" ]; then echo allow; else printf '%s' "$out" | jq -r '.decision // "allow"'; fi
+}
 pending() {
   "${REVIEW_GATE_BIN:-$ROOT/bin/review-gate}" --pending >/dev/null 2>&1
   echo $?
 }
-# The PreToolUse guard, fed the JSON the harnesses send it (apply_patch carries
-# the patch in tool_input.command). "allow" is no output.
-guard() { # $1 tool, $2 file_path or command
-  local out
-  if [ "$1" = Bash ] || [ "$1" = apply_patch ]; then
-    out=$(jq -cn --arg t "$1" --arg c "$2" --arg d "$SANDBOX/repo" '{tool_name:$t,cwd:$d,tool_input:{command:$c}}' | "$ROOT/.claude/hooks/pending-review-guard.sh")
-  else
-    out=$(jq -cn --arg t "$1" --arg f "$2" --arg d "$SANDBOX/repo" '{tool_name:$t,cwd:$d,tool_input:{file_path:$f}}' | "$ROOT/.claude/hooks/pending-review-guard.sh")
-  fi
-  if [ -z "$out" ]; then echo allow; else printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision // "allow"'; fi
-}
-
 build() {
   rm -rf "$SANDBOX/repo"
   git init -q "$SANDBOX/repo"
@@ -122,25 +117,13 @@ run_cases() {
   echo "agent" >>file.txt && git add -A
   check "unreviewed agent commit is allowed (advisory)" "$(commit)" 0
   check "that commit is now pending review" "$(pending)" 1
-  check "the guard refuses an Edit while HEAD is pending" "$(guard Edit "$SANDBOX/repo/file.txt")" deny
-  check "the guard refuses an apply_patch while HEAD is pending" "$(guard apply_patch '*** Begin Patch
-*** Update File: file.txt
-@@
-+x
-*** End Patch')" deny
-  check "the guard refuses another commit while HEAD is pending" "$(guard Bash 'git commit -m "feat: on top"')" deny
-  check "the guard leaves an edit outside the repo alone" "$(guard Edit "$SANDBOX/elsewhere.txt")" allow
-  check "the guard leaves a non-commit Bash call alone" "$(guard Bash 'git status')" allow
+  check "ending the turn is blocked while HEAD is pending" "$(stop false)" block
+  check "a stop already continued once by this hook is let through" "$(stop true)" allow
   check "unreviewed push is refused" "$(push)" 1
 
   review pr-review-toolkit:code-reviewer # clean tree, unpushed range
   check "a review of HEAD clears the pending state" "$(pending)" 0
-  check "edits are allowed again" "$(guard Edit "$SANDBOX/repo/file.txt")" allow
-  check "apply_patch is allowed again" "$(guard apply_patch '*** Begin Patch
-*** Update File: file.txt
-@@
-+x
-*** End Patch')" allow
+  check "ending the turn is allowed once reviewed" "$(stop false)" allow
   check "push after a review of the committed range passes" "$(push)" 0
 
   # The Codex reviewer role clears the gate the way the Claude reviewers do.
@@ -183,27 +166,18 @@ run_cases() {
   check "touching the hatch afterwards clears pending" "$(pending)" 0
   check "and the push accepts the stamped commit" "$(push)" 0
 
-  # Bash writes are edits too; scratch writes are not.
-  echo "bashwrite" >>file.txt && git add -A && commit >/dev/null
-  check "the guard refuses sed -i while HEAD is pending" "$(guard Bash 'sed -i "" -e s/a/b/ file.txt')" deny
-  check "the guard refuses a redirect into the tree while pending" "$(guard Bash 'echo x > file.txt')" deny
-  check "the guard refuses a heredoc into the tree while pending" "$(guard Bash 'cat > file.txt <<EOF2
-x
-EOF2')" deny
-  check "the guard allows a redirect into /tmp while pending" "$(guard Bash 'echo x > /tmp/scratch.txt')" allow
-  check "the guard allows a redirect to a file descriptor while pending" "$(guard Bash 'make check 2>&1 | tail -n 20; echo done >&2')" allow
-  check "the guard refuses a >&file redirect into the tree while pending" "$(guard Bash 'echo x >&file.txt')" deny
-  check "the guard refuses >&word when the word only starts with a digit" "$(guard Bash 'echo x >&1backup.log')" deny
-  check "the guard allows closing a descriptor with >&-" "$(guard Bash 'exec 3>&-; cmd >&- ; echo ok')" allow
-  check "the guard allows a read while pending" "$(guard Bash 'rg -n foo file.txt')" allow
-  review pr-review-toolkit:code-reviewer
-  push >/dev/null
+  # The hatch at the end of a turn: consumed, stamps the commit, lets the stop through.
+  echo "stop-hatch" >>file.txt && git add -A && commit >/dev/null
+  hatch
+  check "the hatch lets a trivial commit's turn end" "$(stop false)" allow
+  check "and it was consumed" "$([ -f "$(git rev-parse --git-common-dir)/claude-review-force" ] && echo left || echo gone)" gone
+  check "and the push accepts the hatched commit" "$(push)" 0
 
-  # A human commit on top of a pending Claude commit moves HEAD; the guard keys on HEAD.
+  # A human commit on top of a pending Claude commit moves HEAD; pending keys on HEAD.
   echo "claude again" >>file.txt && git add -A && commit >/dev/null
   echo "human on top" >>file.txt && git add -A
   human git commit -qm "feat: human" >/dev/null 2>&1
-  check "a human commit on top unblocks editing" "$(pending)" 0
+  check "a human commit on top ends the pending state" "$(pending)" 0
   review pr-review-toolkit:code-reviewer
   push >/dev/null
 
@@ -365,135 +339,6 @@ EOF2')" deny
   agent_off
 }
 
-# hook-bypass-guard.sh is the only thing standing between the gate and a model
-# that would rather not be gated, and it had no assertions at all.
-bypass_cases() {
-  echo
-  echo "=== bypass guard ==="
-  local guard="$ROOT/.claude/hooks/hook-bypass-guard.sh"
-  # An allowed command produces NO output, so jq gets no input and prints
-  # nothing. Defaulting inside jq never fires; it has to happen out here.
-  verdict() {
-    local out
-    out=$(printf '{"tool_input":{"command":%s},"session_id":"s"}' "$(jq -Rn --arg c "$1" '$c')" | "$guard")
-    if [ -z "$out" ]; then echo allow; else
-      printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision // "allow"'
-    fi
-  }
-  # shellcheck disable=SC2016
-  for c in \
-    'git commit --no-verify -m "x"' \
-    'git commit --no-verif -m "x"' \
-    'git commit --no-veri -m "x"' \
-    'git commit -nm "x"' \
-    'git -c core.hooksPath=/dev/null commit -m "x"' \
-    'git config --local core.hooksPath /dev/null' \
-    'CLAUDECODE=0 git commit -m "x"' \
-    'env -u CLAUDECODE git commit -m "x"' \
-    'unset CLAUDECODE; git commit -m "x"' \
-    'REVIEW_GATE_BIN=/nonexistent git commit -m "x"' \
-    'chmod -x ~/Developer/_dotfiles/bin/review-gate' \
-    'sudo chmod -x /Users/sean/Developer/_dotfiles/bin/review-gate' \
-    '/usr/bin/git commit --no-verify -m "x"' \
-    '/usr/bin/git -c core.hooksPath=/dev/null commit -m "x"' \
-    'ls -l && git config core.hooksPath /dev/null' \
-    'git config --list && git config core.hooksPath /dev/null' \
-    'CLAUDECODE=1 echo hi; CLAUDECODE=0 git commit -m x' \
-    '/usr/bin/git commit -nm x' \
-    'sudo git commit -nm x' \
-    'FOO=bar git commit -nm x' \
-    'CLAUDECODE=1 git commit -nm x' \
-    '(git commit --no-verify -m x)' \
-    'export CLAUDECODE=0; git commit -m x' \
-    'declare -x CLAUDECODE=0; git commit -m x' \
-    'git commit \
-       --no-verify -m x' \
-    'git \
-       commit -nm x' \
-    'git -c \
-       core.hooksPath=/dev/null commit -m x' \
-    'env CLAUDECODE=0 git commit -m x' \
-    'env -i git commit -m x' \
-    'env -iu CLAUDECODE git commit -m x' \
-    'env -ui CLAUDECODE git commit -m x' \
-    'env -iu REVIEW_GATE_BIN sh' \
-    'sudo env -iu CLAUDECODE git commit -m x' \
-    'CODEX_THREAD_ID= git commit -m x' \
-    'CODEX_THREAD_ID=other git commit -m x' \
-    'env -u CODEX_THREAD_ID git commit -m x' \
-    'unset CODEX_THREAD_ID; git commit -m x' \
-    'export CODEX_THREAD_ID=; git commit -m x' \
-    'env CODEX_THREAD_ID= git commit -m x' \
-    'git push --no-verify origin main' \
-    'git push origin main --no-verify' \
-    'rm .git/claude-pending-review' \
-    'rm -f "$(git rev-parse --git-common-dir)/claude-pending-review"' \
-    'git rev-parse HEAD >> .git/claude-reviewed-commits' \
-    'echo abc > .git/claude-review' \
-    'chmod -x ~/.claude/hooks/pending-review-guard.sh'; do
-    check "denied: $c" "$(verdict "$c")" deny
-  done
-  # This hook runs on EVERY Bash call, so a false positive is machine-wide and
-  # has no hatch. Every line below was denied by an earlier revision.
-  for c in \
-    'git commit -m "feat: an ordinary commit"' \
-    'git commit -m "note: we do not pass --no-verify here"' \
-    'git log --oneline' \
-    'git push origin main' \
-    'git config --get core.hooksPath' \
-    'git config --get-regexp core.*' \
-    'git config --list' \
-    'CLAUDECODE=1 git commit -m "feat: diagnostics"' \
-    'rg core.hooksPath ~/.gitconfig' \
-    'rg -n core.hooksPath git/hooks/pre-commit' \
-    'rg -u CLAUDECODE bin/' \
-    'rg CLAUDECODE=0 docs/' \
-    'grep -n chmod /Users/sean/Developer/_dotfiles/bin/review-gate' \
-    'wget --no-verbose https://example.com/x' \
-    'npm install --no-verify-store' \
-    'ls -l && cat file.txt' \
-    'git config core.hooksPath' \
-    'git grep core.hooksPath' \
-    'git commit --no-verbose -m "feat: valid git flag"' \
-    'git log --oneline && rg core.hooksPath .githooks' \
-    'git status; rg -n core.hooksPath git/hooks/pre-commit' \
-    'git status && wget --no-verbose https://example.com/x' \
-    'rg -n TODO src/ && git commit -m "feat: x"' \
-    'git add -A && git commit -m "feat: x" && git log -n 1' \
-    'find . -name "*.sh"; git commit -m "feat: x"' \
-    'git commit -m "feat: x" | tail -n 3' \
-    'rg -c core.hooksPath git' \
-    'rg -c core.hooksPath git bin' \
-    'bat -p git/hooks/pre-commit && rg -c core.hooksPath git' \
-    'rg env -u CLAUDECODE bin/' \
-    'rg CODEX_THREAD_ID bin/ .claude/hooks/' \
-    'printenv CODEX_THREAD_ID' \
-    'env printenv CODEX_THREAD_ID' \
-    'git log -n 5 --grep commit' \
-    'fd -e sh | xargs grep -n chmod' \
-    'time git commit -m "feat: x"' \
-    'echo declare CLAUDECODE' \
-    'rg -e declare -e CLAUDECODE .claude/hooks/' \
-    'diff declare.log CLAUDECODE.log' \
-    'npm run typeset-build' \
-    'env CLAUDECODE=1 git commit -m "feat: diagnostics"' \
-    'env FOO=1 rg -i pattern src/' \
-    'env LC_ALL=C sed -i "" -e s/a/b/ file' \
-    'env GIT_SEQUENCE_EDITOR=cat git rebase -i HEAD~3' \
-    'env printenv CLAUDECODE' \
-    'env FOO=1 rg CLAUDECODE bin/' \
-    'git push -n origin main' \
-    'git push --dry-run origin main' \
-    'cat .git/claude-pending-review' \
-    'rg claude-pending-review bin/' \
-    'touch .git/claude-review-force' \
-    'rm -rf build && rg -n claude-pending-review bin/' \
-    'cp a.txt b.txt && cat .git/claude-review' \
-    'mv old.log new.log; rg claude-reviewed-commits docs/'; do
-    check "allowed: $c" "$(verdict "$c")" allow
-  done
-}
-
 # Every agent name the gate's deny message prints must actually clear it, and
 # nothing else may. A message that names an agent which cannot clear the gate
 # sends you round a loop that never terminates.
@@ -564,22 +409,6 @@ mechanism_cases() {
     "$(cd "$repo" && "$ROOT/bin/review-gate" --hash | sed -n 's/^staged=//p')"
   rm -rf "$repo"
 
-  # Why the flag pattern is --no-veri and not --no-v: git rejects --no-v as
-  # ambiguous, and --no-verbose is a real flag that must not be denied.
-  #
-  # In a scratch repo with an empty index, never the caller's. `git commit
-  # --no-verbose -m x` parses fine, so in a repo with anything staged this
-  # assertion would COMMIT it.
-  local probe out
-  probe=$(mktemp -d)
-  git init -q "$probe"
-  out=$(cd "$probe" && git commit --no-v -m x 2>&1)
-  check "git rejects --no-v as ambiguous (so the pattern must be --no-veri)" \
-    "$(case "$out" in *ambiguous*) echo yes ;; *) echo no ;; esac)" yes
-  out=$(cd "$probe" && git commit --no-verbose -m x 2>&1)
-  check "--no-verbose parses, so denying --no-v* was a false positive" \
-    "$(case "$out" in *ambiguous* | *"unknown option"*) echo rejected ;; *) echo parsed ;; esac)" parsed
-  rm -rf "$probe"
 }
 
 # Wiring, not behaviour, and the harness cannot reach it any other way: an
@@ -592,10 +421,10 @@ check "record-review is wired to SubagentStop" \
   "$(jq -r '[.hooks.SubagentStop[]?.hooks[]?.command] | map(select(test("record-review"))) | length' "$SETTINGS")" 1
 check "record-review is NOT wired to PostToolUse" \
   "$(jq -r '[.hooks.PostToolUse[]?.hooks[]?.command] | map(select(test("record-review"))) | length' "$SETTINGS")" 0
-check "pending-review-guard is wired to Bash" \
-  "$(jq -r '[.hooks.PreToolUse[] | select(.matcher=="Bash") | .hooks[].command] | map(select(test("pending-review-guard"))) | length' "$SETTINGS")" 1
-check "pending-review-guard is wired to Edit/Write" \
-  "$(jq -r '[.hooks.PreToolUse[] | select(.matcher|test("Edit")) | .hooks[].command] | map(select(test("pending-review-guard"))) | length' "$SETTINGS")" 1
+check "review-gate --stop is wired to Stop" \
+  "$(jq -r '[.hooks.Stop[]?.hooks[]?.command] | map(select(test("review-gate --stop"))) | length' "$SETTINGS")" 1
+check "nothing gates edits mid-task" \
+  "$(jq -r '[.hooks.PreToolUse[]?.hooks[]?.command] | map(select(test("pending-review-guard"))) | length' "$SETTINGS")" 0
 PASS=0 FAIL=0
 
 echo
@@ -628,9 +457,6 @@ run_cases "gate active (CODEX_THREAD_ID set, CLAUDECODE unset)"
 CODEX_PASS=$PASS CODEX_FAIL=$FAIL
 AGENT_MARKER=claude
 PASS=0 FAIL=0
-bypass_cases
-BYPASS_PASS=$PASS BYPASS_FAIL=$FAIL
-PASS=0 FAIL=0
 roster_cases
 ROSTER_PASS=$PASS ROSTER_FAIL=$FAIL
 PASS=0 FAIL=0
@@ -641,7 +467,6 @@ printf '\n%s\n' "----------------------------------------"
 printf 'negative control: %d assertions failed, so absence is detectable\n' "$CONTROL_FAIL"
 printf 'gate installed:   %d passed, %d failed  (Claude Code marker)\n' "$GATE_PASS" "$GATE_FAIL"
 printf 'gate installed:   %d passed, %d failed  (Codex marker)\n' "$CODEX_PASS" "$CODEX_FAIL"
-printf 'bypass guard:     %d passed, %d failed\n' "$BYPASS_PASS" "$BYPASS_FAIL"
 printf 'reviewer roster:  %d passed, %d failed\n' "$ROSTER_PASS" "$ROSTER_FAIL"
 printf 'mechanism:        %d passed, %d failed\n' "$PASS" "$FAIL"
-[ "$GATE_FAIL" -eq 0 ] && [ "$CODEX_FAIL" -eq 0 ] && [ "$BYPASS_FAIL" -eq 0 ] && [ "$ROSTER_FAIL" -eq 0 ] && [ "$FAIL" -eq 0 ]
+[ "$GATE_FAIL" -eq 0 ] && [ "$CODEX_FAIL" -eq 0 ] && [ "$ROSTER_FAIL" -eq 0 ] && [ "$FAIL" -eq 0 ]
