@@ -319,10 +319,14 @@ roster_cases() {
     grep -qx "$(git -C "$repo" rev-parse HEAD)" "$repo/.git/claude-reviewed-commits" 2>/dev/null && echo yes || echo no
   }
   # Every entry the gate message lists, scraped from the message so they cannot drift.
+  local seen=0
   while IFS= read -r agent; do
     [ -n "$agent" ] || continue
+    seen=$((seen + 1))
     check "the message names $agent, and it clears" "$(clears "$agent")" yes
   done < <(sed -n '/Running any ONE of these/,/^$/p' "$ROOT/bin/review-gate" | sed -n '/^  /{s/ *<-.*$//;s/^  //;s/ *$//;p;}')
+  check "the scrape found the reviewer list (else the checks above checked nothing)" \
+    "$([ "$seen" -ge 5 ] && echo yes || echo "no ($seen)")" yes
   for agent in superpowers:code-reviewer general-purpose Explore; do
     check "$agent does not clear" "$(clears "$agent")" no
   done
