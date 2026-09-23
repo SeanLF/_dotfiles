@@ -91,8 +91,45 @@ for cmd, label in [
     fails += not both
     print(f"{'ok  ' if both else 'FAIL'} {label}")
 
-# The agent-name roster and the review gate's deny message are covered by
-# tests/test-review-gate.sh, which has a real git repo to record against.
+print()
+print("=== steer-agent: a turn with background work running is not 'done' ===")
+import os
+import tempfile
+
+STEER = pathlib.Path(__file__).parent / "steer-agent.sh"
+
+
+def steer_state(event, running):
+    with tempfile.TemporaryDirectory() as d:
+        shims = pathlib.Path(d, "bin")
+        shims.mkdir()
+        # Nothing may reach the real Steer, Ghostty or Notification Centre.
+        for tool in ("pgrep", "open", "osascript", "logger"):
+            (shims / tool).write_text("#!/bin/sh\nexit 1\n")
+            (shims / tool).chmod(0o755)
+        tasks = [{"id": "t", "type": "subagent", "status": "running"}] if running else []
+        env = dict(os.environ, PATH=f"{shims}:{os.environ['PATH']}", STEER_AGENT_STATE_DIR=d + "/state", STEER_AGENT_TTY="/dev/null")
+        subprocess.run(
+            [str(STEER), event],
+            input=json.dumps({"session_id": "tst", "cwd": d, "background_tasks": tasks}),
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        f = pathlib.Path(d, "state", "tst")
+        return f.read_text().split("\t")[0] if f.exists() else "none"
+
+
+for event, running, want in [
+    ("done", False, "done"),
+    ("done", True, "working"),
+    ("idle", True, "working"),
+    ("approval", True, "approval"),
+]:
+    got = steer_state(event, running)
+    fails += got != want
+    print(f"{'ok  ' if got == want else 'FAIL'} {event} with background work {running}: {got} (want {want})")
 
 print()
 print("FAILURES:", fails)

@@ -12,14 +12,20 @@ set -uo pipefail
 # a LaunchAgent and SSH would each get a different directory.
 readonly STATE_DIR="${STEER_AGENT_STATE_DIR:-${HOME}/.cache/claude-steer-sessions}"
 readonly DEV_APP="/Users/sean/Developer/steer/Steer Dev.app"
-readonly EVENT="${1:-}"
+EVENT="${1:-}"
 
 mkdir -p "$STATE_DIR" 2>/dev/null
 # mkdir -p succeeds on an existing unwritable directory, so check separately.
 [ -w "$STATE_DIR" ] || exit 0
 
-IFS=$'\t' read -r session_id cwd <<<"$(cat 2>/dev/null | jq -r '[.session_id // "", .cwd // ""] | @tsv' 2>/dev/null)"
+# running first: tab is IFS whitespace, so an empty leading field would shift the rest.
+IFS=$'\t' read -r running session_id cwd <<<"$(cat 2>/dev/null | jq -r '[([.background_tasks[]? | select(.status == "running")] | length), .session_id // "", .cwd // ""] | @tsv' 2>/dev/null)"
 [ -n "${session_id:-}" ] || exit 0
+
+# The turn ended but background work will wake Claude again: not done, not waiting.
+case "$EVENT" in
+  done | idle) [ "${running:-0}" -gt 0 ] 2>/dev/null && EVENT=working ;;
+esac
 
 # session_id becomes a path component and an `rm -f` argument; reject anything
 # that isn't a plain identifier.
