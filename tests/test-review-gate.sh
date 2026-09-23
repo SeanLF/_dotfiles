@@ -296,7 +296,7 @@ run_cases() {
 roster_cases() {
   echo
   echo "=== reviewer roster ==="
-  local repo named
+  local repo
   repo=$(mktemp -d)
   git init -q "$repo"
   (
@@ -308,18 +308,21 @@ roster_cases() {
     human git commit -qm "chore: base"
     echo two >>f.txt
   )
-  clears() {
+  clears() { # $1 = agent_type, or a /command run as a general-purpose fork
+    local payload
     rm -f "$repo/.git/claude-reviewed-commits"
-    printf '{"agent_type":"%s","cwd":"%s"}' "$1" "$repo" | "$ROOT/bin/record-review" >/dev/null 2>&1
+    case "$1" in
+      /*) payload=$(jq -cn --arg d "$repo" --arg desc "$1" '{agent_id:"f",agent_type:"general-purpose",cwd:$d,background_tasks:[{id:"f",status:"running",agent_type:"general-purpose",description:$desc}]}') ;;
+      *) payload=$(jq -cn --arg d "$repo" --arg t "$1" '{agent_type:$t,cwd:$d}') ;;
+    esac
+    printf '%s' "$payload" | "$ROOT/bin/record-review" >/dev/null 2>&1
     grep -qx "$(git -C "$repo" rev-parse HEAD)" "$repo/.git/claude-reviewed-commits" 2>/dev/null && echo yes || echo no
   }
-  # Exactly the names the deny message lists, scraped from the message itself so
-  # the two cannot drift apart.
-  named=$(sed -n '/Running any ONE of these/,/^$/p' "$ROOT/bin/review-gate" |
-    grep -oE '^  [a-z-]+(:[a-z-]+)?' | tr -d ' ')
-  for agent in $named; do
+  # Every entry the gate message lists, scraped from the message so they cannot drift.
+  while IFS= read -r agent; do
+    [ -n "$agent" ] || continue
     check "the message names $agent, and it clears" "$(clears "$agent")" yes
-  done
+  done < <(sed -n '/Running any ONE of these/,/^$/p' "$ROOT/bin/review-gate" | sed -n '/^  /{s/ *<-.*$//;s/^  //;s/ *$//;p;}')
   for agent in superpowers:code-reviewer general-purpose Explore; do
     check "$agent does not clear" "$(clears "$agent")" no
   done

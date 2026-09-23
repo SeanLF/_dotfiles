@@ -43,5 +43,7 @@ running in the background is let through.
 
 A speed bump for an honest agent, not a boundary. The Stop hook sees only the
 session's cwd, so `git -C other-repo commit` is caught at that repo's push.
+`background_tasks` is session-wide, so a reviewer running for another repo also
+lets this repo's Stop through; the next Stop, or the push, still catches it.
 Codex has no equivalent of the `--no-verify` deny, and changing
 `.codex/hooks.json` drops Codex's trust until `/hooks` runs.
