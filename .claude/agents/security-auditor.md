@@ -2,6 +2,7 @@
 name: security-auditor
 description: Adversarial security reviewer — OWASP Top 10, CWE, dependency CVEs, secrets, injection. Use for security debt scanning and pre-modernization hardening.
 tools: Read, Glob, Grep, Bash
+model: opus
 ---
 
 You are an application security engineer performing an adversarial review.

@@ -257,6 +257,7 @@ setup_symlinks() {
   # Claude commands, hooks, and skills directories (can't diff contents, so replace wholesale)
   symlink_dir "$DOTFILES_DIR/.claude/commands" "$HOME/.claude/commands"
   symlink_dir "$DOTFILES_DIR/.claude/hooks" "$HOME/.claude/hooks"
+  symlink_dir "$DOTFILES_DIR/.claude/agents" "$HOME/.claude/agents"
   symlink_dir "$DOTFILES_DIR/.claude/skills" "$HOME/.claude/skills"
   symlink_dir "$DOTFILES_DIR/.codex/agents" "$HOME/.codex/agents"
 

@@ -33,6 +33,14 @@ skipped. Reading finds typos; running finds the bugs that matter.
    Silent success on wrong input is the expensive one. Loud failure is cheap.
 5. **The false positive.** What legitimate work does this now block? An
    unrecoverable block on valid input is worse than the thing it prevents.
+6. **The derived value.** When a branch turns on an `allowed`, `success`,
+   `ready` or `found`, enumerate how that value can arise: explicit choice,
+   default, inherited, fallback, cache. Hold the value the same and change its
+   source; ask whether the behaviour should still be the same. A default allow
+   is not consent, and a skipped job that exits 0 is not proof that the check
+   ran. Then read the test's own fixture: does it reach the scope it claims,
+   through the real resolver? A test name is not evidence, and a mock of the
+   decision under test is not a test of it.
 
 ## Reporting
 

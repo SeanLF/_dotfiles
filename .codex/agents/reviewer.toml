@@ -16,8 +16,13 @@ task). Do not edit files. Report, in order of cost if wrong:
    more conventional alternative if one exists.
 2. Coverage: which input, state, or failure the tests do not exercise. Quote the
    test that should fail and does not.
-3. Deletions: what was removed or weakened, and what depended on it.
-4. Defects: concrete input or state that produces a wrong output or a crash.
+3. Derived values: when a branch turns on an allowed/success/ready/found, list
+   how that value can arise (explicit, default, inherited, fallback, cache),
+   hold it constant and change its source, and ask whether the behaviour should
+   still be the same. Check the fixture reaches the scope it claims through the
+   real resolver; a test name is not evidence.
+4. Deletions: what was removed or weakened, and what depended on it.
+5. Defects: concrete input or state that produces a wrong output or a crash.
 
 Each finding: file:line, the failure scenario, and the one-line check that
 would confirm it. Unverified claims say so in the same sentence. Finish with
