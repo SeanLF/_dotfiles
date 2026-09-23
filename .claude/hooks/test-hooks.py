@@ -99,7 +99,7 @@ import tempfile
 STEER = pathlib.Path(__file__).parent / "steer-agent.sh"
 
 
-def steer_state(event, running):
+def steer_state(event, running, kind="subagent"):
     with tempfile.TemporaryDirectory() as d:
         shims = pathlib.Path(d, "bin")
         shims.mkdir()
@@ -107,7 +107,7 @@ def steer_state(event, running):
         for tool in ("pgrep", "open", "osascript", "logger"):
             (shims / tool).write_text("#!/bin/sh\nexit 1\n")
             (shims / tool).chmod(0o755)
-        tasks = [{"id": "t", "type": "subagent", "status": "running"}] if running else []
+        tasks = [{"id": "t", "type": kind, "status": "running"}] if running else []
         env = dict(os.environ, PATH=f"{shims}:{os.environ['PATH']}", STEER_AGENT_STATE_DIR=d + "/state", STEER_AGENT_TTY="/dev/null")
         subprocess.run(
             [str(STEER), event],
@@ -121,15 +121,18 @@ def steer_state(event, running):
         return f.read_text().split("\t")[0] if f.exists() else "none"
 
 
-for event, running, want in [
-    ("done", False, "done"),
-    ("done", True, "working"),
-    ("idle", True, "working"),
-    ("approval", True, "approval"),
+# A background shell such as a dev server may never exit, so it never wakes Claude.
+for event, running, kind, want in [
+    ("done", False, "subagent", "done"),
+    ("done", True, "subagent", "working"),
+    ("idle", True, "subagent", "working"),
+    ("approval", True, "subagent", "approval"),
+    ("done", True, "shell", "done"),
+    ("idle", True, "shell", "idle"),
 ]:
-    got = steer_state(event, running)
+    got = steer_state(event, running, kind)
     fails += got != want
-    print(f"{'ok  ' if got == want else 'FAIL'} {event} with background work {running}: {got} (want {want})")
+    print(f"{'ok  ' if got == want else 'FAIL'} {event} with running {kind if running else 'nothing'}: {got} (want {want})")
 
 print()
 print("FAILURES:", fails)

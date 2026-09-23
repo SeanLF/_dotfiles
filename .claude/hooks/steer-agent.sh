@@ -19,10 +19,11 @@ mkdir -p "$STATE_DIR" 2>/dev/null
 [ -w "$STATE_DIR" ] || exit 0
 
 # running first: tab is IFS whitespace, so an empty leading field would shift the rest.
-IFS=$'\t' read -r running session_id cwd <<<"$(cat 2>/dev/null | jq -r '[([.background_tasks[]? | select(.status == "running")] | length), .session_id // "", .cwd // ""] | @tsv' 2>/dev/null)"
+IFS=$'\t' read -r running session_id cwd <<<"$(cat 2>/dev/null | jq -r '[([.background_tasks[]? | select(.status == "running" and .type == "subagent")] | length), .session_id // "", .cwd // ""] | @tsv' 2>/dev/null)"
 [ -n "${session_id:-}" ] || exit 0
 
-# The turn ended but background work will wake Claude again: not done, not waiting.
+# A running subagent will wake Claude again: not done, not waiting. A background
+# shell may never exit (a dev server), so it does not count.
 case "$EVENT" in
   done | idle) [ "${running:-0}" -gt 0 ] 2>/dev/null && EVENT=working ;;
 esac
