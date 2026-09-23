@@ -15,7 +15,7 @@
           },
           {
             "type": "command",
-            "command": "~/.claude/hooks/steer-agent.sh working"
+            "command": "~/.claude/hooks/notify.sh working"
           }
         ]
       }
@@ -26,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/steer-agent.sh approval"
+            "command": "~/.claude/hooks/notify.sh approval"
           }
         ]
       },
@@ -35,7 +35,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/steer-agent.sh idle"
+            "command": "~/.claude/hooks/notify.sh idle"
           }
         ]
       }
@@ -55,7 +55,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/steer-agent.sh end"
+            "command": "~/.claude/hooks/notify.sh end"
           }
         ]
       }

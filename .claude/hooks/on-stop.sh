@@ -9,5 +9,5 @@ if [ -n "$out" ]; then
   printf '%s\n' "$out"
   exit 0
 fi
-printf '%s' "$input" | "${STEER_AGENT_BIN:-$(dirname "$0")/steer-agent.sh}" 'done'
+printf '%s' "$input" | "${NOTIFY_BIN:-$(dirname "$0")/notify.sh}" 'done'
 exit 0

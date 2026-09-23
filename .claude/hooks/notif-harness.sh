@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Hermetic before/after harness for steer-agent.sh: runs it for every event
+# Hermetic before/after harness for notify.sh: runs it for every event
 # with a shimmed PATH and an isolated state dir, so nothing reaches the real
 # Notification Centre, Steer, or Ghostty. Reports external spawns per event,
 # synchronous ms, and registry staleness.
@@ -9,7 +9,7 @@ set -uo pipefail
 # Beside this file, not under $HOME, so a fresh checkout measures the hook in
 # the repo rather than whatever version happens to be installed.
 _here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly HOOK="${HOOK:-$_here/steer-agent.sh}"
+readonly HOOK="${HOOK:-$_here/notify.sh}"
 # 'done' is quoted: unquoted it parses as the loop keyword, not an array element.
 readonly EVENTS=(working approval idle 'done' end)
 readonly RUNS="${RUNS:-5}"
@@ -51,8 +51,8 @@ payload() { printf '{"session_id":"harness-%s","cwd":"%s"}' "$1" "$PWD"; }
 
 run_hook() {
   PATH="$work/bin:$PATH" \
-    STEER_AGENT_STATE_DIR="$work/state" \
-    STEER_AGENT_TTY="$OSC" \
+    NOTIFY_STATE_DIR="$work/state" \
+    NOTIFY_TTY="$OSC" \
     "$HOOK" "$1" <<<"$(payload "$1")" >/dev/null 2>&1
 }
 
@@ -100,7 +100,7 @@ fi
 
 echo
 echo "=== live registry ==="
-real="$HOME/.cache/claude-steer-sessions"
+real="$HOME/.cache/claude-notify-sessions"
 if [ -d "$real" ]; then
   total=0
   stale=0

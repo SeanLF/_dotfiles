@@ -67,7 +67,7 @@ on_stop() {
   local out
   rm -f "$SANDBOX/notified"
   out=$(printf '{"hook_event_name":"Stop","cwd":"%s","stop_hook_active":false,"background_tasks":[]}' "$PWD" |
-    STEER_AGENT_BIN="$SANDBOX/notify-stub" "$ROOT/.claude/hooks/on-stop.sh" 2>/dev/null)
+    NOTIFY_BIN="$SANDBOX/notify-stub" "$ROOT/.claude/hooks/on-stop.sh" 2>/dev/null)
   if [ "$(printf '%s' "$out" | jq -r '.decision // empty' 2>/dev/null)" = block ]; then
     echo block
   elif [ -f "$SANDBOX/notified" ]; then

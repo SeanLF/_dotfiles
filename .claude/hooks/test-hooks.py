@@ -92,11 +92,11 @@ for cmd, label in [
     print(f"{'ok  ' if both else 'FAIL'} {label}")
 
 print()
-print("=== steer-agent: a turn with background work running is not 'done' ===")
+print("=== notify.sh: a turn with background work running is not 'done' ===")
 import os
 import tempfile
 
-STEER = pathlib.Path(__file__).parent / "steer-agent.sh"
+NOTIFY = pathlib.Path(__file__).parent / "notify.sh"
 
 
 def steer_state(event, running, kind="subagent"):
@@ -108,9 +108,9 @@ def steer_state(event, running, kind="subagent"):
             (shims / tool).write_text("#!/bin/sh\nexit 1\n")
             (shims / tool).chmod(0o755)
         tasks = [{"id": "t", "type": kind, "status": "running"}] if running else []
-        env = dict(os.environ, PATH=f"{shims}:{os.environ['PATH']}", STEER_AGENT_STATE_DIR=d + "/state", STEER_AGENT_TTY="/dev/null")
+        env = dict(os.environ, PATH=f"{shims}:{os.environ['PATH']}", NOTIFY_STATE_DIR=d + "/state", NOTIFY_TTY="/dev/null")
         subprocess.run(
-            [str(STEER), event],
+            [str(NOTIFY), event],
             input=json.dumps({"session_id": "tst", "cwd": d, "background_tasks": tasks}),
             env=env,
             capture_output=True,

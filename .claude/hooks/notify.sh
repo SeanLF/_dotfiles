@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
-# Routes Claude Code session state to a DualSense via Steer's steer:// surface.
+# Session state for Claude Code and Codex: records it per session, sends a Ghostty
+# notification (OSC 777) when a turn needs you, and drives the DualSense LEDs and
+# haptics through Steer when Steer is running.
 #
-#   steer-agent.sh <working|approval|idle|done|end>
+#   notify.sh <working|approval|idle|done|end>
 #
-# Runs on UserPromptSubmit, synchronously. Anything that can block (`open`,
+# Runs synchronously on every hook event. Anything that can block (`open`,
 # `osascript`) is pushed into the detached background block below.
 
 set -uo pipefail
 
 # Fixed path, not $TMPDIR: TMPDIR is per-bootstrap-namespace, so a login shell,
 # a LaunchAgent and SSH would each get a different directory.
-readonly STATE_DIR="${STEER_AGENT_STATE_DIR:-${HOME}/.cache/claude-steer-sessions}"
+readonly STATE_DIR="${NOTIFY_STATE_DIR:-${HOME}/.cache/claude-notify-sessions}"
 readonly DEV_APP="/Users/sean/Developer/steer/Steer Dev.app"
 EVENT="${1:-}"
 
@@ -62,16 +64,16 @@ state_file="${STATE_DIR}/${session_id}"
 # ClaudeCode.app session (tty is legitimately `??`) buries real failures.
 if [ -z "${claude_pid:-}" ]; then
   tty_path=""
-  [ -f "$state_file" ] || logger -t steer-agent "no claude ancestor from pid $$; session is pid-0, age-pruned only"
+  [ -f "$state_file" ] || logger -t claude-notify "no claude ancestor from pid $$; session is pid-0, age-pruned only"
 elif [ -z "${tty_name:-}" ] || [ "$tty_name" = "??" ]; then
   tty_path=""
-  [ -f "$state_file" ] || logger -t steer-agent "no tty for claude pid ${claude_pid}; notification will not be clickable"
+  [ -f "$state_file" ] || logger -t claude-notify "no tty for claude pid ${claude_pid}; notification will not be clickable"
 else
   tty_path="/dev/${tty_name}"
 fi
 
 # Test seam.
-[ -n "${STEER_AGENT_TTY:-}" ] && tty_path="$STEER_AGENT_TTY"
+[ -n "${NOTIFY_TTY:-}" ] && tty_path="$NOTIFY_TTY"
 
 case "$EVENT" in
   working | approval | idle | done)
@@ -80,7 +82,7 @@ case "$EVENT" in
     printf '%s\t%s\t%s\t%s\t%s\n' \
       "$EVENT" "$tty_path" "${cwd:-$PWD}" "${claude_pid:-0}" "$(date +%s)" >"$state_file" ||
       {
-        logger -t steer-agent "failed to write ${state_file}"
+        logger -t claude-notify "failed to write ${state_file}"
         exit 0
       }
     ;;
@@ -156,7 +158,7 @@ esac
   if [ -n "$steer_pid" ]; then
     steer_bin="$(ps -o comm= -p "$steer_pid" 2>/dev/null)"
     [ -z "$steer_bin" ] &&
-      logger -t steer-agent "Steer pid ${steer_pid} resolved no path; URL routing degraded"
+      logger -t claude-notify "Steer pid ${steer_pid} resolved no path; URL routing degraded"
   fi
 
   steer() {
@@ -225,10 +227,10 @@ APPLESCRIPT
       "$(printf '%s' "$project" | tr -d '\000-\037;')" \
       "$(printf '%s' "$notify_msg" | tr -d '\000-\037;')" \
       >"$tty_path" 2>/dev/null ||
-      logger -t steer-agent "OSC write to ${tty_path} failed; ${EVENT} notification lost"
+      logger -t claude-notify "OSC write to ${tty_path} failed; ${EVENT} notification lost"
   else
     # Every logger call in this file lands at DEBUG; `log show` needs --debug.
-    logger -t steer-agent "no tty for session; ${EVENT} notification suppressed"
+    logger -t claude-notify "no tty for session; ${EVENT} notification suppressed"
   fi
 } >/dev/null 2>&1 </dev/null &
 
