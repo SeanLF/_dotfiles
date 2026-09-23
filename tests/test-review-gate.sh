@@ -271,6 +271,15 @@ EOF2')" deny
   review pr-review-toolkit:code-reviewer
   check "one review covers several unpushed commits" "$(push)" 0
 
+  # A follow-up after a range review changes the range hash; the commits the
+  # review saw must still count.
+  echo "r1" >>file.txt && git add -A && commit >/dev/null
+  echo "r2" >>file.txt && git add -A && commit >/dev/null
+  review pr-review-toolkit:code-reviewer
+  hatch
+  echo "r3" >>file.txt && git add -A && commit >/dev/null
+  check "a hatched follow-up keeps the range review before it" "$(push)" 0
+
   # No HEAD: `git diff HEAD` fatals but still hashes empty input, so every tree
   # in a fresh repo would hash alike.
   local fresh empty
@@ -345,9 +354,11 @@ EOF2')" deny
     git commit -qm "feat: inside a worktree" >/dev/null 2>&1
     printf '{"agent_type":"pr-review-toolkit:code-reviewer","cwd":"%s"}' "$SANDBOX/wt" |
       "$ROOT/bin/record-review" >/dev/null 2>&1
+    pending >"$SANDBOX/wt-pending"
     git push -qu origin wt-branch >/dev/null 2>&1
   )
   check "a reviewed push from a linked worktree passes" "$?" 0
+  check "a review in a linked worktree clears its pending commit" "$(cat "$SANDBOX/wt-pending")" 0
   git worktree remove --force "$SANDBOX/wt" >/dev/null 2>&1
   git branch -qD wt-branch >/dev/null 2>&1
 

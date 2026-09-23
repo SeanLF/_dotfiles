@@ -30,12 +30,19 @@ fi
 
 # Not named GIT_DIR: git exports that into hooks inside a linked worktree.
 COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null) || exit 0
+# Pending is per worktree (review-gate reads it from --git-dir).
+PRIVATE_DIR=$(git rev-parse --git-dir 2>/dev/null) || exit 0
 
-# HEAD has been seen, whatever else the reviewer read.
+# Stamp the whole unpushed range, not just HEAD: the range hash below already
+# certifies it, but a follow-up commit changes that hash and would orphan the
+# commits under HEAD.
 if HEAD_SHA=$(git rev-parse -q --verify HEAD 2>/dev/null); then
-  echo "$HEAD_SHA" >>"$COMMON_DIR/claude-reviewed-commits"
-  [ "$(cat "$COMMON_DIR/claude-pending-review" 2>/dev/null)" = "$HEAD_SHA" ] &&
-    rm -f "$COMMON_DIR/claude-pending-review"
+  {
+    "$(dirname "$0")/review-gate" --range
+    echo "$HEAD_SHA"
+  } >>"$COMMON_DIR/claude-reviewed-commits"
+  [ "$(cat "$PRIVATE_DIR/claude-pending-review" 2>/dev/null)" = "$HEAD_SHA" ] &&
+    rm -f "$PRIVATE_DIR/claude-pending-review"
 fi
 
 HASHES=$("$(dirname "$0")/review-gate" --hash) || exit 0

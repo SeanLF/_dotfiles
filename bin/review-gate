@@ -9,6 +9,7 @@
 #   review-gate --push LOCAL REMOTE    exit 1 unless every commit in REMOTE..LOCAL
 #                                      was reviewed, individually or as a range
 #   review-gate --hash                 print the content hashes record-review stores
+#   review-gate --range                print the unpushed commits a review covers
 #
 # Files in the common git dir:
 #   claude-review             hashes of what the last reviewer saw
@@ -61,6 +62,12 @@ EMPTY_DIGEST=$(printf '' | digest)
 if [ "${1:-}" = "--hash" ]; then
   printf 'worktree=%s\nstaged=%s\nrange=%s\nrangehead=%s\n' \
     "$(worktree_hash)" "$(staged_hash)" "$(range_hash)" "$(rangehead_hash)"
+  exit 0
+fi
+
+if [ "${1:-}" = "--range" ]; then
+  head=$(git rev-parse -q --verify HEAD 2>/dev/null) || exit 0
+  git rev-list "$(range_base "$head")..$head" 2>/dev/null
   exit 0
 fi
 
