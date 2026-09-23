@@ -1,15 +1,9 @@
 #!/bin/bash
-# Does a real Codex session honour the guards in ~/.codex/hooks.json?
-#
-# Opt-in, because it spends tokens: it drives a real headless Codex. Everything
-# else in tests/ is free and offline, so this is not in `just test`.
-#
-# The invariant it defends: Codex runs ~/.codex/hooks.json with the PreToolUse
-# payload the guards parse, and a deny stops the tool. tests/test-codex-hooks.sh
-# proves the guards deny that payload; only this proves Codex still sends it.
-#
-# --dangerously-bypass-hook-trust: the hooks it bypasses trust for are our own,
-# and /hooks may not have been run on this machine.
+# Does a real headless Codex session honour the guards in ~/.codex/hooks.json?
+# Opt-in (spends tokens), unlike the rest of tests/. test-codex-hooks.sh proves
+# the guards deny the PreToolUse payload; only this proves Codex still sends
+# it. --dangerously-bypass-hook-trust: the hooks it bypasses trust for are our
+# own, and /hooks may not have been run on this machine.
 set -uo pipefail
 
 command -v codex >/dev/null 2>&1 || {

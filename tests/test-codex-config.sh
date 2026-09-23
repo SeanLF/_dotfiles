@@ -190,8 +190,7 @@ check "dry-run reports the untrusted hooks" "$(printf '%s\n' "$out" | grep -c 'r
 check "dry-run reaches the end despite the drift" "$(printf '%s\n' "$out" | grep -c '^Done!$')" 1
 check "dry-run left the live file alone" "$(cat "$T/codex/config.toml")" 'model = "stale"'
 
-# Control: the same module with --check in a bare assignment. Under set -e that
-# aborts the script on drift, silently.
+# Control: the same module with --check as a bare assignment aborts under set -e on drift, silently.
 # shellcheck disable=SC2016
 sed -e 's|^DOTFILES_DIR=.*|DOTFILES_DIR="'"$ROOT"'"|' \
   -e 's|if out=\$("\$tool" --check 2>&1); then rc=0; else rc=\$?; fi|out=$("$tool" --check 2>\&1); rc=$?|' \

@@ -9,5 +9,4 @@
 # @raycast.icon 🔅
 # @raycast.packageName System
 
-# Dim the keyboard backlight via HID illumination events (see ~/.local/bin/kbbl).
 exec "$HOME/.local/bin/kbbl" down 1

@@ -60,9 +60,6 @@ def load(path: Path) -> dict[str, Any]:
         return tomllib.load(fh)
 
 
-# --- TOML emitter --------------------------------------------------------------
-
-
 def key(k: str) -> str:
     return k if BARE_KEY.match(k) else json.dumps(k, ensure_ascii=False)
 
@@ -122,9 +119,6 @@ def render(data: dict[str, Any]) -> str:
     if tomllib.loads(text) != data:
         raise ValueError("rendered TOML does not parse back to the same data; refusing to write")
     return text
-
-
-# --- ownership -----------------------------------------------------------------
 
 
 def owned_units(tracked: dict[str, Any]) -> list[tuple[str, ...]]:
@@ -205,9 +199,6 @@ def check_tracked(tracked: dict[str, Any]) -> None:
             raise SystemExit(2)
 
 
-# --- hook trust ----------------------------------------------------------------
-
-
 def hooks_trust(live: dict[str, Any], hooks_path: Path) -> list[str]:
     """Trust is recorded per handler under hooks.state, keyed
     "<hooks.json path>:<event label>:<group index>:<handler index>"."""
@@ -226,9 +217,6 @@ def hooks_trust(live: dict[str, Any], hooks_path: Path) -> list[str]:
                 if not (state.get(k) or {}).get("trusted_hash"):
                     missing.append(f"{event}[{g}][{h}] {handler.get('command', '?')}")
     return missing
-
-
-# --- main ----------------------------------------------------------------------
 
 
 def main() -> int:

@@ -1,13 +1,11 @@
 #!/bin/bash
 # Global pre-push: the review gate for Claude-made changes, then lefthook.
 #
-# SECURITY: lefthook.yml is repo-controlled and runs arbitrary commands. Git
-# never clones .git/hooks precisely so that cloning cannot execute a repo's
-# code, so delegation needs per-repo opt-in:  git config --local hooks.lefthook true
-# Read at --local scope deliberately: a global value would trust every repo.
+# lefthook.yml is repo-controlled and runs arbitrary commands, so delegation
+# needs per-repo opt-in: git config --local hooks.lefthook true. Read at
+# --local scope deliberately, or a global value would trust every repo.
 set -euo pipefail
 
-# Both consumers read the ref list from stdin; capture it once.
 REFS=$(cat)
 
 # Fixed path in _dotfiles, so it is trusted whichever repo we are standing in.

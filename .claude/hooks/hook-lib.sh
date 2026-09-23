@@ -1,24 +1,16 @@
 #!/bin/bash
-# Shared helpers for the PreToolUse Bash guards.
-#
-# Sourced, never executed. Every function here must be safe to call when the
-# input is hostile or malformed, because the callers fail open.
+# Shared helpers for the PreToolUse Bash guards, sourced never executed.
+# Every function here must be safe to call on hostile or malformed input,
+# because the callers fail open.
 
-# Remove quoted regions from a command string, tracking quote state properly.
-#
-# The obvious `sed "s/'[^']*'//g; s/\"[^\"]*\"//g"` is wrong: it pairs quotes by
-# position, not by state. Given `echo "don't" && rg -rn foo` it pairs the
-# apostrophe inside the double-quoted word with the next single quote in the
-# line and deletes everything between, taking the real `rg` invocation with it.
-# The guard then silently sees nothing to guard. Contractions are routine, so
-# this fires often, and the failure mode is silence.
-#
-# Also drops heredoc bodies: everything from `<<` onward is data, not flags.
+# Removes quoted regions from a command string, tracking quote state (not
+# pairing by position: `sed "s/'[^']*'//g"` on `echo "don't" && rg -rn foo`
+# would pair the apostrophe in "don't" with the next quote and delete the
+# real `rg` invocation with it). Also drops heredoc bodies.
 strip_quotes() {
   awk '
-    # Drop heredoc BODIES only, line by line. Truncating at the first "<<"
-    # instead would hide every command after the heredoc, so a `git commit`
-    # following one would never be seen.
+    # Drops heredoc BODIES only, line by line; truncating at the first "<<"
+    # would hide every command after the heredoc too.
     {
       line = $0
       if (skip) {
@@ -48,14 +40,10 @@ strip_quotes() {
   '
 }
 
-# A `git commit` invocation, as opposed to a mention of one or a different git
-# subcommand that happens to contain the word. Only dash-options and the
-# argument of -C/-c/--git-dir/--work-tree may sit between `git` and `commit`,
-# so `git log --grep commit` does not match while `git -C /path commit` does.
-#
-# `git` may carry a leading path, VAR=val assignments, or a sudo/command
-# wrapper. Without those, `/usr/bin/git commit -nm x` and `CLAUDECODE=1 git
-# commit -nm x` read as "not a commit", which is exactly backwards for a guard.
+# Matches a real `git commit` invocation, not a mention or a different
+# subcommand containing the word: only dash-options and -C/-c/--git-dir/
+# --work-tree arguments may sit between `git` and `commit`, and `git` may
+# carry a leading path, VAR=val assignments, or a sudo/command wrapper.
 is_git_commit() {
   printf '%s' "$1" | grep -qE '(^|[;&|][[:space:]]*)[[:space:]]*[({]*[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*((sudo|command|nohup|time)[[:space:]]+)*([^[:space:]]*/)?git([[:space:]]+(-[cC][[:space:]]+[^[:space:]]+|--(git-dir|work-tree|namespace|exec-path)([= ])[^[:space:]]+|-[^[:space:]]+))*[[:space:]]+commit([[:space:]]|$)'
 }

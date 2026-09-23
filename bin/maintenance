@@ -19,10 +19,8 @@ for arg in "$@"; do
   esac
 done
 
-# Activate mise so tools it manages (tldr, gh, etc.) are on PATH for this script.
-# Maintenance runs non-interactively, so mise's shell prompt hooks don't fire;
-# `mise env` emits the equivalent exports directly. Guarded so a mise hiccup
-# doesn't abort the whole run under `set -e`.
+# mise's shell hooks don't fire non-interactively; `mise env` emits the PATH
+# exports directly. `|| true` guards a mise hiccup from aborting under `set -e`.
 if command -v mise &>/dev/null; then
   eval "$(mise env -s bash 2>/dev/null)" || true
 fi
@@ -57,14 +55,9 @@ warn() {
   failures+=("$1")
 }
 
-# Run a command and convert non-zero exit into a warning (not a hard fail).
-# Individual step failures shouldn't abort the whole maintenance run.
 try() { "$@" || warn "$* failed"; }
 
-# Snapshot resolved tool versions BEFORE any upgrade, so a bad `mise upgrade`
-# (or uv/rustup bump) is recoverable — those managers are version-addressable
-# (`mise install ruby@<old>`). Brew has no clean downgrade, so its list is
-# reference-only. Config rollback is already covered by git (Brewfile, mise config).
+# Only mise/uv/rustup are version-addressable for rollback; brew's list below is reference-only.
 step_snapshot() {
   step "Version snapshot"
   if $CHECK_ONLY; then
@@ -81,8 +74,6 @@ step_snapshot() {
   command -v uv &>/dev/null && uv tool list >"$out/uv-tools.txt" 2>/dev/null || true
   command -v rustup &>/dev/null && rustup toolchain list >"$out/rustup.txt" 2>/dev/null || true
   brew list --versions >"$out/brew.txt" 2>/dev/null || true
-  # mise is the primary version-addressable manager (the main rollback target),
-  # so an empty manifest means the rollback point is unusable — say so loudly.
   if [[ -s "$out/mise.txt" ]]; then
     ok "snapshot -> $out"
   else
@@ -105,9 +96,7 @@ step_homebrew() {
     brew outdated || true
     brew outdated --cask --greedy-auto-updates || true
   else
-    # Homebrew made "ask mode" the default for `brew upgrade`, so it prompts
-    # "Do you want to proceed? [y/n]" whenever a TTY is attached (i.e. when run
-    # by hand). --no-ask restores unattended behaviour. https://github.com/Homebrew/brew/issues/22597
+    # --no-ask: brew upgrade defaults to prompting when a TTY is attached, which hangs unattended runs.
     try brew upgrade --no-ask
     try brew upgrade --cask --no-ask
     try brew autoremove
@@ -124,37 +113,27 @@ step_appstore() {
   fi
 }
 
-# Xcode prereleases (xcodes). Stable is the App Store copy and mas upgrades it;
-# here it is report-only. Prereleases churn fast, so if you already run one we
-# auto-upgrade it to the latest.
-# `xcodes list` prints ascending and marks installed versions "(Installed)", so
-# the last "Beta" or "Release Candidate" line is the newest prerelease and tells
-# us if we're already on it (cheap guard against a needless multi-GB re-download).
-# RCs are prereleases too: `--latest-prerelease` installs them, so the parse and
-# the installed gate must both match them or the RC is invisible.
+# Xcode prereleases only (stable is mas's job, above). `--latest-prerelease`
+# installs RCs too, so prerelease_re must also match "release candidate" or an
+# installed RC would look like a fresh one is available.
 step_xcodes() {
   step "Xcode (xcodes)"
   command -v xcodes &>/dev/null || {
     info "xcodes not installed, skipping"
     return
   }
-  # `xcodes update` refreshes the cached list but prints all ~285 versions;
-  # silence it since we re-read what we need from `xcodes list` below.
+  # Silenced: `xcodes update` prints all ~285 versions; re-read via `xcodes list` below.
   xcodes update >/dev/null 2>&1 || warn "xcodes update failed"
 
-  # Anchor on lines starting with a version number to skip blank lines and the
-  # "Showing Xcodes for this Mac..." footer that `xcodes list` prints. Read once.
+  # Anchor on a leading version number to skip blanks and the list's footer line.
   local list prerelease_re latest_pre latest_stable
   prerelease_re="beta|release candidate"
   list=$(xcodes list 2>/dev/null)
   latest_pre=$(echo "$list" | grep -iE "^[0-9].*($prerelease_re)" | tail -1)
   latest_stable=$(echo "$list" | grep -E "^[0-9]" | grep -viE "$prerelease_re" | tail -1)
 
-  # Auto-upgrade the prerelease only if one is installed and it isn't already newest.
-  # Multi-GB download; may prompt for your Apple ID if xcodes has no cached
-  # session. --latest-prerelease self-updates the list before installing. Guard
-  # the empty-parse case so a format drift can't blank the "already newest"
-  # check and trigger a needless re-download.
+  # Multi-GB download; guard the empty-parse case so a format drift in `xcodes
+  # list` can't blank the "already newest" check and trigger a needless re-download.
   if [[ -z "$latest_pre" ]]; then
     warn "xcodes: could not parse a prerelease from 'xcodes list' (format change?)"
   elif xcodes installed 2>/dev/null | grep -qiE "$prerelease_re"; then
@@ -181,10 +160,8 @@ step_xcodes() {
   fi
 }
 
-# Workaround: `claude update` downloads the full binary (~200MB) even when
-# already up-to-date. Compare versions first to skip the download.
-# Claude Code also auto-upgrades while running; this just prefetches before
-# the next session starts. https://github.com/anthropics/claude-code/issues/20808
+# `claude update` re-downloads the full ~200MB binary even when already current;
+# compare versions first to skip it.
 step_claude_code() {
   step "Claude Code"
   local local_ver dist_url remote_ver
@@ -204,10 +181,7 @@ step_claude_code() {
   fi
 }
 
-# Claude plugins/skills self-update, but refreshing here stages the latest
-# versions before the next session so you don't run the reload slash command
-# mid-session. Refresh all marketplace sources, then update each enabled plugin
-# (there is no `update --all`; "restart required to apply").
+# No `claude plugin update --all`; refresh marketplaces then loop each enabled plugin id.
 step_claude_plugins() {
   step "Claude plugins/skills"
   command -v claude &>/dev/null || {
@@ -223,17 +197,15 @@ step_claude_plugins() {
     warn "jq not found — skipping per-plugin updates"
     return
   }
-  # Distinguish "list failed / schema drifted" from "genuinely zero enabled
-  # plugins" — otherwise a broken CLI silently reads as nothing-to-do and
-  # plugins go stale unnoticed.
+  # Distinguish "list failed" from "genuinely zero enabled plugins", or a broken
+  # CLI silently reads as nothing-to-do.
   local raw ids id
   if ! raw=$(claude plugin list --json 2>/dev/null); then
     warn "claude plugin list failed"
     return
   fi
-  # Use the full "name@marketplace" id — `claude plugin update` resolves that,
-  # not the bare name. A plugin enabled at both user and project scope is listed
-  # once per scope; the update is per id, so dedupe or it runs twice.
+  # Full "name@marketplace" id, not the bare name; `claude plugin update` needs it.
+  # A plugin enabled at both user and project scope is listed twice, so dedupe.
   ids=$(jq -r '[.[] | select(.enabled) | .id] | unique[]' <<<"$raw" 2>/dev/null) || {
     warn "could not parse plugin list (format change?)"
     return
@@ -247,14 +219,13 @@ step_claude_plugins() {
   done <<<"$ids"
 }
 
-# agy self-updates in the background on every invocation (per upstream install
-# script), and `agy update` re-fetches the full ~42MB tarball even when current.
-# Skip it here.
+# agy self-updates in the background already, and re-fetches its full ~42MB
+# tarball even when current; no step needed here.
 
 step_mise() {
   step "mise"
-  # Scope GITHUB_TOKEN to just this step so it doesn't leak to other tools.
-  # Without it, mise's "latest" resolution hits unauthenticated rate limits.
+  # Scoped to this step only: without GITHUB_TOKEN, mise's "latest" resolution
+  # hits unauthenticated rate limits.
   local gh_token=""
   if command -v gh &>/dev/null && gh auth status &>/dev/null; then
     gh_token="$(gh auth token)"
@@ -263,9 +234,8 @@ step_mise() {
     GITHUB_TOKEN="$gh_token" mise outdated || true
     return
   fi
-  # mise exits 0 when it cannot resolve a tool's latest version (rate limit,
-  # flaky GitHub API) and then reports "all up to date"; that tool was silently
-  # skipped. Its warnings go to stderr, so capture that and surface them.
+  # mise exits 0 and reports "all up to date" even when a tool's latest version
+  # couldn't be resolved; capture stderr to surface that silent skip.
   local log
   log=$(mktemp)
   GITHUB_TOKEN="$gh_token" mise upgrade 2>"$log" || warn "mise upgrade failed"
@@ -277,12 +247,11 @@ step_mise() {
   try mise prune --yes
 }
 
-# `mise prune` only removes orphaned versions tracked via configs; tools
-# installed with no config source linger silently. `mise ls` renders the
-# source config as the 3rd column, so any row with fewer than 3 columns
-# is an undeclared install — unless another project's config declares it.
-# `mise ls` only resolves sources from the configs active in the cwd, but
-# mise keeps symlinks to every config it has seen in its state dir.
+# `mise prune` only removes orphaned versions tracked via configs; a tool
+# installed with no config source lingers silently. `mise ls` renders the
+# source config as the 3rd column, so a row with fewer than 3 columns is an
+# undeclared install, cross-checked below against every config mise has seen
+# (its state dir), not just the ones active in this cwd.
 step_mise_drift() {
   step "mise drift"
   local tracked drift="" name ver
@@ -308,15 +277,10 @@ step_uv() {
   fi
 }
 
-# Default gems shipped with mise-managed Ruby drift behind upstream and
-# aren't refreshed by `mise upgrade`.
-#
-# Gems with native extensions (openssl, etc.) need to find brew's OpenSSL
-# headers at build time. mise's Ruby doesn't ship pkg-config metadata for
-# its vendored openssl, so without these env vars `gem update openssl`
-# fails with "OpenSSL library could not be found". Passing --with-openssl-dir
-# after `--` forwards it to every gem's extconf.rb; gems that don't care
-# ignore unknown flags.
+# mise's Ruby has no pkg-config metadata for its vendored openssl, so a gem
+# with native extensions fails to build against it without the env vars set
+# below. --with-openssl-dir after `--` forwards to every gem's extconf.rb;
+# gems that don't need it ignore the unknown flag.
 step_gems() {
   step "Ruby gems"
   command -v gem &>/dev/null || {
@@ -324,14 +288,14 @@ step_gems() {
     return
   }
 
-  # Bare-metal tool gems that must live in the Ruby gemset (see ruby-global-gems).
-  # mise gives each Ruby its own gemset, so a new Ruby starts empty and these
-  # need (re)installing; project gems come from each repo's bundle, not here.
+  # Tool gems that must live in the Ruby gemset (see ruby-global-gems); mise
+  # gives each Ruby its own empty gemset, so a new Ruby needs these reinstalled.
+  # Project gems come from each repo's bundle, not here.
   local wanted=() line
   if [[ -f "$RUBY_GEMS" ]]; then
     while IFS= read -r line; do
-      line="${line%%#*}"           # strip inline comments
-      line="${line//[[:space:]]/}" # drop all whitespace
+      line="${line%%#*}"
+      line="${line//[[:space:]]/}"
       [[ -n "$line" ]] && wanted+=("$line")
     done <"$RUBY_GEMS"
   fi
@@ -349,8 +313,7 @@ step_gems() {
     return
   fi
 
-  # `local -x` scopes the openssl export to the gem child processes and restores
-  # the prior env on return, so nothing leaks into later maintenance steps.
+  # `local -x`: scopes these exports to gem's child processes only, restored on return.
   local openssl_prefix="" ssl_args=()
   if command -v brew &>/dev/null; then
     openssl_prefix="$(brew --prefix openssl@3 2>/dev/null || true)"
@@ -365,10 +328,9 @@ step_gems() {
   try gem cleanup
 }
 
-# rustup is bootstrapped manually (not via brew or mise). mise's `rust` plugin
-# delegates to rustup, so `mise upgrade` installs the latest stable toolchain
-# through rustup, but rustup itself, its other toolchains, and stale
-# components only refresh via `rustup self update` / `rustup update`.
+# mise's `rust` plugin delegates to rustup for the stable toolchain, but rustup
+# itself, other toolchains, and stale components only refresh via `rustup
+# self update` / `rustup update` — not covered by step_mise above.
 step_rustup() {
   step "rustup"
   command -v rustup &>/dev/null || {
@@ -405,7 +367,6 @@ step_macos() {
   softwareupdate --list 2>&1 | grep -vE "^Software Update Tool|^Finding available software|^$" || true
 }
 
-# Bail early if offline
 if ! online -q 5; then
   echo -e "${red}No network connectivity — skipping maintenance${reset}"
   exit 1

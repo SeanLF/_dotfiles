@@ -2,16 +2,7 @@
 # What Claude Code sessions actually spend, measured from local transcripts
 #
 # Usage: cache-meter [-h] [--rates] [--ttl] [--size] [--waste]
-#   --rates   per-token $ fitted to ccusage's own costs, with fit residual
-#   --ttl     cache hit rate by idle gap (where the prompt cache expires)
-#   --size    $/turn by context size (the dominant cost driver)
-#   --waste   cost of cache misses, by cause
-#   (no flag runs all four)
-#
-# No pricing table: per-token rates are least-squares fitted to ccusage's own
-# daily costs, and the fit residual is printed as the negative control.
-# Transcripts are trees (rewind, /fork, double-esc branch), so a call's
-# predecessor is found by walking parentUuid, never by timestamp order.
+#   (no flag runs all four: rate fit / hit-rate-by-gap / $-by-size / miss cost)
 
 import argparse
 import json
@@ -51,7 +42,9 @@ def claude_breakdowns(day):
 
 
 def fit_rates(daily):
-    """Solve per-model $/token from ccusage costs. Returns {model: (out, cacheW, cacheR)}."""
+    """Solve per-model $/token from ccusage costs. Returns {model: (out, cacheW, cacheR)}.
+    No pricing table: rates are least-squares fit to ccusage's own daily costs;
+    the residual returned alongside is the negative control on that fit."""
     rows = defaultdict(list)
     for day in daily["daily"]:
         for b in claude_breakdowns(day):
@@ -87,7 +80,9 @@ def fit_rates(daily):
 
 
 def load_pairs():
-    """Adjacent API-call pairs along each transcript's parentUuid chain."""
+    """Adjacent API-call pairs along each transcript's parentUuid chain.
+    Transcripts branch (rewind, /fork, double-esc); a predecessor is found by
+    walking parentUuid, never by timestamp order."""
     pairs, calls, branchy = [], 0, 0
     for dirpath, dirnames, filenames in os.walk(ROOT):
         if os.path.basename(dirpath) == "subagents":

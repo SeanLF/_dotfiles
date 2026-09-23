@@ -1,4 +1,3 @@
-# History
 HISTSIZE=100000
 SAVEHIST=100000
 HISTFILE=~/.zsh_history
@@ -7,11 +6,9 @@ setopt HIST_IGNORE_ALL_DUPS
 setopt HIST_FIND_NO_DUPS
 setopt SHARE_HISTORY
 
-# Completions
 fpath=("/Users/sean/.local/share/zsh/site-functions" $fpath) # sentry-cli completion
 autoload -Uz compinit && compinit
 
-# Plugins (via Homebrew)
 _brew_prefix="${HOMEBREW_PREFIX:-$(brew --prefix)}"
 [[ -f "$_brew_prefix/share/zsh-autosuggestions/zsh-autosuggestions.zsh" ]] && source "$_brew_prefix/share/zsh-autosuggestions/zsh-autosuggestions.zsh"
 [[ -f "$_brew_prefix/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ]] && source "$_brew_prefix/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
@@ -21,7 +18,6 @@ _brew_prefix="${HOMEBREW_PREFIX:-$(brew --prefix)}"
 [[ -f "$_brew_prefix/opt/fzf/shell/completion.zsh" ]] && source "$_brew_prefix/opt/fzf/shell/completion.zsh"
 unset _brew_prefix
 
-# Environment
 export LANG=en_CA.UTF-8
 # bat and Claude Code both detect terminal background at runtime; set per-mode themes.
 export BAT_THEME_DARK="Monokai Extended"
@@ -35,19 +31,15 @@ _hp="${HOMEBREW_PREFIX:-/opt/homebrew}"
 export PATH="$_hp/opt/curl/bin:$_hp/opt/grep/libexec/gnubin:$_hp/opt/findutils/libexec/gnubin:$_hp/opt/gnu-sed/libexec/gnubin:$_hp/opt/make/libexec/gnubin:$HOME/.local/bin:$PATH"
 unset _hp
 
-# Aliases
 [[ -f ~/.aliases.zsh ]] && source ~/.aliases.zsh
 
-# Tool initialization.
-# mise must activate BEFORE starship/zoxide because both are mise-managed
-# (aqua:starship/starship, aqua:ajeetdsouza/zoxide) — until mise injects its
-# shim directory into PATH, `command -v starship` silently fails and the
-# prompt falls back to bare zsh until the next shell.
+# mise must activate before starship/zoxide (both mise-managed): until mise
+# injects its shim dir into PATH, `command -v starship` fails and the prompt
+# falls back to bare zsh until the next shell.
 command -v mise &>/dev/null && eval "$(mise activate zsh)"
 command -v starship &>/dev/null && eval "$(starship init zsh)"
 command -v zoxide &>/dev/null && eval "$(zoxide init zsh)"
 
-# Environment files
 [[ -f "$HOME/.local/bin/env" ]] && . "$HOME/.local/bin/env"
 
 # Local overrides (not tracked in dotfiles)

@@ -1,9 +1,7 @@
 #!/bin/bash
-# bin/online must keep retrying until the timeout. It runs under `set -e`, and
-# `((count++))` from zero returns non-zero, so on bash 4+ the first failed ping
-# used to kill the script before the loop ran. /bin/bash 3.2 tolerates that, so
-# the script is run with the `bash` on PATH (brew, 5.x) to keep the check strict.
-# `ping` is shimmed so no network is needed.
+# Run with the `bash` on PATH (brew, 5.x), not /bin/bash 3.2: under `set -e`,
+# `((count++))` from zero returns non-zero and would kill the script before
+# the retry loop ran, and 3.2 tolerates that silently. `ping` is shimmed.
 set -uo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)

@@ -1,21 +1,8 @@
 #!/usr/bin/env bash
-#
-# Hermetic before/after harness for the Claude notification stack.
-#
-#   .claude/hooks/notif-harness.sh
-#
-# Runs steer-agent.sh for every event with a shimmed PATH and an isolated state
-# dir, so nothing reaches the real Notification Centre, Steer, or Ghostty. What
-# it reports is what the delegation is supposed to change:
-#
-#   spawns   external processes the hook starts per event (the glue)
-#   sync ms  what actually blocks your prompt on UserPromptSubmit
-#   registry where session state lives, and how much of it is stale
-#
-# Shims stand in for the things that would otherwise have side effects. pgrep
-# answers "yes, running" so the full path is exercised rather than short-
-# circuited; osascript distinguishes the two AppleScript queries by their text
-# so `done` is not silently suppressed by a fake focus hit.
+# Hermetic before/after harness for steer-agent.sh: runs it for every event
+# with a shimmed PATH and an isolated state dir, so nothing reaches the real
+# Notification Centre, Steer, or Ghostty. Reports external spawns per event,
+# synchronous ms, and registry staleness.
 
 set -uo pipefail
 
@@ -28,9 +15,8 @@ readonly EVENTS=(working approval idle 'done' end)
 readonly RUNS="${RUNS:-5}"
 
 work="$(mktemp -d)"
-# Without this, a failed mktemp leaves work empty and every "$work/bin/$tool"
-# below resolves to /bin/$tool, i.e. the shim loop tries to overwrite /bin/open.
-# SIP happens to block that on a stock Mac; this script must not rely on it.
+# A failed mktemp leaves work empty, so "$work/bin/$tool" below would resolve
+# to /bin/$tool and the shim loop would try to overwrite /bin/open.
 [ -d "$work" ] || {
   echo "mktemp -d failed" >&2
   exit 1
@@ -48,15 +34,11 @@ for tool in osascript terminal-notifier open pgrep logger; do
 #!/usr/bin/env bash
 printf '%s\t%s\n' "$tool" "\$*" >>"$LOG"
 case "$tool" in
-  # Emit a pid that still EXISTS when the hook reads it: the hook now resolves
-  # the executable path off the pid, and \$\$ here is the shim, already reaped by
-  # then -- which silently measured the Steer-is-down path instead. pid 1 is
-  # always alive and resolves to launchd, exercising the release-app branch.
+  # pid 1 (launchd) always exists; \$\$ here would be the shim, already reaped
+  # by the time the hook resolves its executable path off the pid.
   pgrep) echo 1; exit 0 ;;
   osascript)
-    # One AppleScript call survives in the hook, the focus probe. Answer "no" so
-    # a fake focus hit cannot suppress \`done\`. The old two-branch shim named a
-    # tty-walk query that no longer exists.
+    # Answers the focus probe; must be "no" or a fake hit suppresses \`done\`.
     echo no
     ;;
 esac
@@ -77,9 +59,7 @@ run_hook() {
 echo "=== static ==="
 printf 'hook LOC          %s\n' "$(grep -c '' "$HOOK")"
 printf 'osascript blocks  %s\n' "$(sed 's/#.*//' "$HOOK" | grep -c 'osascript')"
-# Strip comments first: after the OSC swap the word "terminal-notifier" survives
-# in a comment explaining why it left, and counting that as a dependency would
-# report a removal that did happen as one that didn't.
+# Strip comments first, or a tool name mentioned only in prose counts as a dependency.
 printf 'external deps     %s\n' \
   "$(sed 's/#.*//' "$HOOK" | grep -oE 'terminal-notifier|osascript|open -g|pgrep' | sort -u | paste -sd, -)"
 

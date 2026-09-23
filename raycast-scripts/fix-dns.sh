@@ -9,9 +9,8 @@
 # @raycast.icon globe
 # @raycast.packageName Network
 
-# DNS stack: Tailscale DNS (100.100.100.100) -> NextDNS over DoH, per-device
-# profile from the tailnet policy; MagicDNS and the ts.net search domain come
-# with it. Nothing else should be configuring the resolver.
+# DNS stack: Tailscale DNS (100.100.100.100) -> NextDNS over DoH via tailnet
+# policy. Nothing else should be configuring the resolver.
 
 TS="${TAILSCALE_BIN:-/Applications/Tailscale.app/Contents/MacOS/Tailscale}"
 [[ -x "$TS" ]] || TS=$(command -v tailscale) || {

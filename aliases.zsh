@@ -1,4 +1,3 @@
-# File listing
 if command -v eza &> /dev/null; then
   alias ls="eza --icons --group-directories-first"
   alias ll="eza -lah --icons --group-directories-first"
@@ -7,14 +6,11 @@ else
   alias ll="ls -lha"
 fi
 
-# Docker
 alias dc='docker compose'
 alias dcr='docker compose run --rm'
 
-# Editor
 alias code='zed'
 
-# Git
 alias g='git'
 alias ga='git add'
 alias gaa='git add --all'
@@ -28,8 +24,7 @@ alias gpf='git push --force-with-lease'
 alias gst='git status'
 alias gsw='git switch'
 
-# Claude Code launchers live as scripts in bin/ (ccnim = free NIM cloud via Olla,
-# ccl = local llama.cpp).
+# Claude Code launchers (ccnim = free NIM cloud via Olla, ccl = local llama.cpp) live as scripts in bin/.
 
 # Johnny Decimal navigation for Documents
 jd() {

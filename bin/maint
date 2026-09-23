@@ -11,9 +11,7 @@ status=${PIPESTATUS[0]}
 
 echo
 echo "── Summary ──"
-# apfel enforces the real 4096-token budget itself and fails cleanly on overflow,
-# so we don't second-guess it with a char heuristic. The full log is printed
-# above, so a failed summary degrades to a one-line notice.
+# apfel enforces its own token budget; on failure the full log above still stands in.
 apfel -q --max-tokens 256 \
   -s "Summarize a system maintenance run. Terse bullets; call out failures, warnings, or anything unusual." \
   -f "$LOG" "Summarize:" ||

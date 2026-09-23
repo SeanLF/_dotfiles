@@ -23,8 +23,7 @@ show_help() {
 }
 
 url="http://127.0.0.1:40115"
-# Not /tmp/llama-server.log: Llama.app's `llama serve` already writes there,
-# and the startup-failure handler below tails this file.
+# Not /tmp/llama-server.log: Llama.app's own `llama serve` already writes there.
 log=/tmp/ccl-llama-server.log
 preset="${CCL_PRESET:-$HOME/.config/ccl/models.ini}"
 
@@ -42,11 +41,8 @@ while [[ $# -gt 0 ]]; do
       model="$2"
       shift 2
       ;;
-    # Long-only, both of these, because claude owns the short forms: -r is its
-    # --resume and -p its --print. Swallowing -r was the worse of the two, since
-    # it restarted the server and then handed the session id on to claude as a
-    # bare positional prompt, so asking to resume a session silently began a new
-    # one. Swallowing -p turned a piped run into a TUI that hangs on a tty.
+    # Long-only, both of these: claude owns -r (--resume) and -p (--print);
+    # a short alias here would swallow either and change claude's own behaviour.
     --restart)
       restart=true
       shift
@@ -64,9 +60,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# The formula name is not always the binary name: llama-server ships in the
-# llama.cpp formula, so interpolating $tool into the hint would send someone
-# with nothing installed to `brew install llama-server`, which does not exist.
+# tool:formula pairs — llama-server ships in the llama.cpp formula, so the
+# brew-install hint below must name the formula, not the binary.
 for tool in llama-server:llama.cpp jq:jq; do
   command -v "${tool%%:*}" >/dev/null || {
     echo "ccl: '${tool%%:*}' not found on PATH (brew install ${tool##*:})" >&2
@@ -82,26 +77,20 @@ done
 
 server_up() { curl -sf -o /dev/null --max-time 2 "$url/health" 2>/dev/null; }
 
-# The router's own registry is the source of truth for what exists, what is
-# loaded, and how it was resolved; there is no cache check or model-identity
-# bookkeeping to do here. Every jq needs `|| true` at the call site: jq exits 5
-# on a non-JSON body (anything else answering on :40115 satisfies curl -sf), and
-# under bash 3.2 a failing command substitution aborts the script at the
-# assignment, before any fallback can run.
+# Every jq call needs `|| true` at the call site: jq exits 5 on a non-JSON body
+# (anything answering on :40115 satisfies curl -sf), and under bash 3.2 a
+# failing command substitution aborts the script at the assignment.
 models_json() { curl -sf --max-time 5 "$url/v1/models" 2>/dev/null || true; }
 field() { jq -r --arg m "$model" ".data[]?|select(.id==\$m)|$1 // empty" <<<"$2" 2>/dev/null || true; }
 
-# --offline is a server-level flag, so the running router either has it or does
-# not and the only way to change that is a restart. Compare rather than always
-# restarting on --pull: that churned a 26 GiB reload for an already-cached
-# model, and, worse, left every later plain `ccl` reusing a router with no
-# --offline while still printing that it had one. Checked in both directions.
+# --offline is set only at router startup; compare want vs running state rather
+# than always restarting on --pull, or a later plain `ccl` would silently reuse
+# a non-offline router.
 router_argv() {
   local p
-  # Scoped to the port, matching the pkill selector below. A bare
-  # --models-preset match picks any router by pid order, and reading another
-  # one's argv could report ours as offline when it is not; the exact state
-  # that lets a cache miss start a multi-GB download unasked.
+  # Scoped to the port, matching the pkill selector below — a bare
+  # --models-preset match could pick a different router and misreport its
+  # --offline state as ours.
   p="$(pgrep -f 'llama-server .*--port 40115' 2>/dev/null | head -1)"
   [[ -n "$p" ]] && ps -o args= -p "$p" 2>/dev/null || true
 }
@@ -117,18 +106,14 @@ fi
 
 if $restart && server_up; then
   pkill -f "llama-server .* --port 40115" 2>/dev/null || true
-  # Wait for the port to actually free; a bare sleep races a still-shutting-down
-  # server, which would pass server_up below and leave the old preset in force.
+  # A bare sleep would race a still-shutting-down server and leave the old preset in force.
   n=0
   while server_up && [[ $n -lt 20 ]]; do
     sleep 0.5
     n=$((n + 1))
   done
-  # Refuse rather than warn. Continuing meant running against a server this
-  # script does not control, at exit 0, with the warning scrolled away by the
-  # TUI's first repaint. Reachable whenever the process on the port is not one
-  # pkill's pattern matches: Llama.app's `llama serve`, a --port=40115 spelling,
-  # or anything else holding it.
+  # Refuse rather than warn: continuing would run against a server this script
+  # doesn't control, at exit 0, with the warning scrolled away by the TUI.
   if server_up; then
     echo "ccl: llama-server on :40115 did not stop, so the preset was not reloaded." >&2
     echo "     Stop it before rerunning: pkill -f 'llama-server .* 40115'" >&2
@@ -137,20 +122,15 @@ if $restart && server_up; then
 fi
 
 if ! server_up; then
-  # A cache miss otherwise fetches multi-GB weights nobody asked for. --offline
-  # is llama.cpp's own switch for that, and is the right tool rather than a
-  # cache check of our own: it resolves the five env vars that can relocate the
-  # cache, treats quant tags case-insensitively, and knows what a bare repo id
-  # resolves to. Note a preset stanza is offered whether or not it is cached,
-  # so a miss surfaces at load time, not at the offer check below.
+  # --offline is llama.cpp's own switch against fetching multi-GB weights nobody
+  # asked for; it already knows the cache-relocation env vars and quant-tag
+  # aliasing this script would otherwise have to reimplement. A preset stanza
+  # is offered whether or not it's cached, so a miss surfaces at load time below.
   offline=(--offline)
   if $pull; then offline=(); fi
-  # --models-max 1, against a default of 4. On unified memory the models share
-  # one budget, so the default happily keeps two resident and blows the Metal
-  # working-set ceiling: qwen (25 GiB) alongside gemma (14 GiB) is 39 GiB
-  # against the 40200 MB this M4 Pro reports, and the second model's first
-  # request dies with "decode() failed: Compute error". Evicting to one costs a
-  # reload when switching, which is the right trade at these sizes.
+  # --models-max 1 (default 4): unified memory shares one budget across resident
+  # models, so keeping more than one loaded here exceeds the Metal working-set
+  # ceiling and the second model's first request dies with a compute error.
   nohup llama-server --models-preset "$preset" "${offline[@]}" --models-max 1 \
     --port 40115 --host 127.0.0.1 >"$log" 2>&1 &
   server_pid=$!
@@ -164,9 +144,8 @@ if ! server_up; then
       exit 1
     fi
     if [[ $n -ge 120 ]]; then
-      # Kill it rather than leak it. nohup+disown means the child outlives us,
-      # and a server that never binds does not answer /health, so the next run
-      # would see a free port and spawn a second one.
+      # Kill it rather than leak it: nohup+disown means the child outlives us,
+      # and an unhealthy server would otherwise let the next run spawn a second one.
       echo "ccl: router not healthy after 60s; stopping it (see $log)" >&2
       kill "$server_pid" 2>/dev/null || true
       exit 1
@@ -178,10 +157,9 @@ fi
 
 json="$(models_json)"
 status="$(field '.status.value' "$json")"
-# No --pull hint here. A preset stanza is always listed, cached or not, so
-# reaching this means the id is in neither the preset nor the cache, and --pull
-# cannot help: it permits a download for a model already declared, it does not
-# declare one. The cache miss surfaces at load time instead, below.
+# No --pull hint here: a preset stanza is always listed, cached or not, so
+# reaching this means the id isn't declared at all — --pull permits a download,
+# it doesn't declare a model.
 if [[ -z "$status" ]]; then
   echo "ccl: the router does not offer '$model'." >&2
   echo "     Add a stanza to $preset (then --restart), or pick one of:" >&2
@@ -189,10 +167,9 @@ if [[ -z "$status" ]]; then
   exit 1
 fi
 
-# Loading is what populates meta.n_ctx, so this is not just a warm-up for the
-# first prompt: there is no other way to learn the window the server actually
-# gave the model. llama.cpp does not reject an oversized ctx-size, it warns and
-# clamps to n_ctx_train, so the preset's number cannot be trusted as served.
+# Loading is what populates meta.n_ctx — the only way to learn the window
+# actually served, since llama.cpp silently clamps an oversized ctx-size rather
+# than rejecting it, so the preset's number can't be trusted on its own.
 if [[ "$status" != "loaded" ]]; then
   echo "ccl: loading $model" >&2
   # The router appends across loads; only search lines written by this one.
@@ -200,8 +177,8 @@ if [[ "$status" != "loaded" ]]; then
   curl -sf --max-time 900 "$url/v1/messages" -H 'content-type: application/json' \
     -d "{\"model\":\"$model\",\"max_tokens\":1,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}" \
     >/dev/null 2>&1 || {
-    # The empty-path form is the cache miss; the bare "failed to load model"
-    # string also covers a corrupt gguf, whose reason the tail below must show.
+    # The empty-path form is the cache miss; a corrupt gguf also matches "failed
+    # to load model", so the tail below is what shows which one it was.
     if ! $pull && [[ "$(tail -n +"$((${log_mark:-0} + 1))" "$log" 2>/dev/null)" == *"failed to load model, ''"* ]]; then
       echo "ccl: $model is declared but not in the local cache; --pull to fetch it." >&2
       exit 1
@@ -215,45 +192,32 @@ fi
 
 served_ctx="$(field '.meta.n_ctx' "$json")"
 [[ "$served_ctx" =~ ^[1-9][0-9]*$ ]] || {
-  # Say so. Guessing here re-introduces exactly what reading it back prevents:
-  # a window Claude Code believes in and the server never had.
+  # Say so rather than guess: a guessed window is exactly what reading it back prevents.
   echo "ccl: could not read n_ctx for $model from $url/v1/models" >&2
   exit 1
 }
-# The router spawns a child llama-server per model and reports its resolved
-# argv, so the slot count comes from what is actually running rather than from
-# re-reading the preset we handed it.
-# SC2016 is disabled because $i here is a jq binding, not a shell variable;
-# the single quotes are what keep it out of the shell's hands.
+# Slot count comes from the child's resolved argv, not the preset we handed it.
+# $i below is a jq binding, not a shell variable; the single quotes keep it that way.
 # shellcheck disable=SC2016
 slots="$(field '.status.args|index("--parallel") as $i|if $i then .[$i+1] else empty end' "$json")"
 [[ "$slots" =~ ^[1-9][0-9]*$ ]] || slots=1
 
-# ANTHROPIC_API_KEY (not AUTH_TOKEN) is required to override an active Claude
-# subscription login and force the custom endpoint; the value is unused here.
+# ANTHROPIC_API_KEY (unused value) overrides an active Claude subscription
+# login to force this endpoint.
 #
 # CLAUDE_CODE_MAX_CONTEXT_TOKENS, not --autocompact: that flag rejects anything
-# below 100k, so a smaller preset ctx-size would die on argv parsing after the
-# model load. The env var takes any value and stays overridable from the
-# caller's environment. Without it Claude Code does not recognise "$model" and
-# assumes a 200k window, then overflows a smaller one.
+# below 100k, so a smaller preset ctx-size would die on argv parsing. Unset,
+# Claude Code assumes a 200k window for an unrecognised model and overflows it.
 #
-# --dangerously-skip-permissions is opt-in (-y) rather than always-on. It is not
-# overridable once passed: --permission-mode manual does not win against it and
-# there is no --no- form, so baking it in would remove the prompt with no way
-# back, for the weakest model in the toolbox. `ccnim` passes no permission flag
-# either.
+# --dangerously-skip-permissions is opt-in (-y): once passed, --permission-mode
+# manual can't override it and there's no --no- form, so it must never be default.
 claude_args=()
 if $yolo; then claude_args+=(--dangerously-skip-permissions); fi
 
-# All four tier vars, not just ANTHROPIC_MODEL. The old single-model server
-# ignored the requested model name, so a request for claude-opus-5 landed on
-# whatever was loaded; the router routes strictly and 400s an unknown name. Left
-# unset, each tier resolves to a hardcoded claude-* literal, so `--model opus`,
-# the /model picker, the Agent tool's model: field and every plugin agent
-# pinning `model: opus` (several ship in ~/.claude/plugins) fail mid-session.
-# Aliasing the literals in the preset would work too, but they change with each
-# Claude Code release; pointing the tiers at the one served model does not.
+# All four tier vars, not just ANTHROPIC_MODEL: the router 400s an unknown
+# model name, and left unset, each tier resolves to a hardcoded claude-*
+# literal, so `--model opus`, the /model picker, and any plugin agent pinning
+# a tier fail mid-session.
 ANTHROPIC_BASE_URL="$url" \
   ANTHROPIC_API_KEY="llama" \
   ANTHROPIC_MODEL="$model" \

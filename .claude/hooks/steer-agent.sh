@@ -1,72 +1,40 @@
 #!/usr/bin/env bash
-#
-# Route Claude Code session state to a DualSense via Steer's steer:// surface.
+# Routes Claude Code session state to a DualSense via Steer's steer:// surface.
 #
 #   steer-agent.sh <working|approval|idle|done|end>
 #
-# Hook JSON arrives on stdin. Three signals, each doing what it is actually
-# good at (all measured on hardware 2026-07-19, not assumed):
-#
-#   player LEDs   how many sessions want you      ambient, survives layer presses
-#   haptic        something changed               finds you without a screen
-#   notification  which project, click to go      the only channel carrying identity
-#
-# The light bar is deliberately NOT used: it is driven every tick by the
-# layer/gyro/battery state machine, so anything written there is wiped by the
-# first L1 press. The player LEDs are untouched by that path.
-#
-# STALL SAFETY: this runs on UserPromptSubmit, which Claude Code executes
-# synchronously before your prompt is processed. Everything that can block --
-# `open` (LaunchServices) and `osascript` (Apple Events, 120s default reply
-# timeout) -- is therefore pushed into a detached background block. The
-# synchronous part is a cat, a jq call and a printf.
-# A fully wedged Ghostty or Steer must cost the session nothing.
+# Runs on UserPromptSubmit, synchronously. Anything that can block (`open`,
+# `osascript`) is pushed into the detached background block below.
 
 set -uo pipefail
 
-# Fixed path, not $TMPDIR: on macOS TMPDIR is per-bootstrap-namespace, so
-# sessions started from a login shell, a LaunchAgent and over SSH would each
-# get a different directory and the gauge would silently count only its own.
+# Fixed path, not $TMPDIR: TMPDIR is per-bootstrap-namespace, so a login shell,
+# a LaunchAgent and SSH would each get a different directory.
 readonly STATE_DIR="${STEER_AGENT_STATE_DIR:-${HOME}/.cache/claude-steer-sessions}"
 readonly DEV_APP="/Users/sean/Developer/steer/Steer Dev.app"
 readonly EVENT="${1:-}"
 
 mkdir -p "$STATE_DIR" 2>/dev/null
-# `mkdir -p` succeeds on an existing directory even if it is unwritable, which
-# would disable the feature permanently and invisibly. Check writability too.
+# mkdir -p succeeds on an existing unwritable directory, so check separately.
 [ -w "$STATE_DIR" ] || exit 0
 
-# --- Session identity --------------------------------------------------------
-# One jq invocation, not two: this path is synchronous on every prompt.
 IFS=$'\t' read -r session_id cwd <<<"$(cat 2>/dev/null | jq -r '[.session_id // "", .cwd // ""] | @tsv' 2>/dev/null)"
 [ -n "${session_id:-}" ] || exit 0
 
-# session_id becomes a path component and an `rm -f` argument. Claude Code
-# emits UUIDs, but a stray `/` would silently write into a non-existent
-# subdirectory (making the session invisible to the gauge forever) and `..`
-# would take the delete outside STATE_DIR. Reject anything that isn't a plain
-# identifier rather than reasoning about the blast radius.
+# session_id becomes a path component and an `rm -f` argument; reject anything
+# that isn't a plain identifier.
 case "$session_id" in
   '' | *[!A-Za-z0-9_-]*) exit 0 ;;
 esac
 
-# Walk up to the owning `claude` process for its pid and tty. Both are needed:
-# the pid to prune dead sessions, the tty to focus the right tab.
+# Walk up to the owning `claude` process for its pid and tty. The tty MUST
+# come from the claude process, not from this hook: hooks are spawned without
+# a controlling terminal, so `ps -o tty= -p $$` here would return `??`.
 #
-# The tty MUST come from the claude process, not from this hook -- Claude Code
-# spawns hooks without a controlling terminal (`ps -o tty= -p $$` returns
-# `??`), which silently stripped the notification's click action and made the
-# banner unclickable. tty is the right correlator generally: cwd can't
-# disambiguate (two sessions can share a directory, and cwd drifts as a session
-# cd's around) and pids are ephemeral.
-#
-# One `ps` for the whole table, walked in awk. The obvious per-level loop cost
-# ~15 subprocesses and dominated this hook's synchronous runtime.
-# The membership test is against `ppid`, NOT `comm`, on purpose: referencing
-# comm[p] auto-creates the key in awk, so testing `p in comm` would always
-# succeed and turn an unresolvable pid into an infinite loop -- in the path that
-# runs before every prompt. The hop cap makes that structural rather than
-# incidental.
+# The membership test below is against `ppid`, NOT `comm`: referencing comm[p]
+# auto-creates the key in awk, so `p in comm` would always succeed and turn an
+# unresolvable pid into an infinite loop. The hop cap is a second line of
+# defence, not the fix.
 IFS=' ' read -r claude_pid tty_name <<<"$(
   ps -eo pid=,ppid=,tty=,comm= 2>/dev/null | awk -v start="$$" '
     { ppid[$1] = $2; tty[$1] = $3; comm[$1] = $4 }
@@ -83,14 +51,9 @@ IFS=' ' read -r claude_pid tty_name <<<"$(
 
 state_file="${STATE_DIR}/${session_id}"
 
-# Log the degraded cases ONCE per session, not once per event. Sessions started
-# via ClaudeCode.app rather than the terminal binary legitimately resolve a
-# `claude` ancestor whose tty is `??`, so this branch is routine for them, not
-# exceptional -- logging every turn would bury the failures worth seeing.
+# Log the degraded cases once per session, not once per event, or a routine
+# ClaudeCode.app session (tty is legitimately `??`) buries real failures.
 if [ -z "${claude_pid:-}" ]; then
-  # Total walk failure. Worth recording: it writes pid 0, which is both
-  # unclickable and unverifiable by the pruner -- the one case that can leave
-  # state behind.
   tty_path=""
   [ -f "$state_file" ] || logger -t steer-agent "no claude ancestor from pid $$; session is pid-0, age-pruned only"
 elif [ -z "${tty_name:-}" ] || [ "$tty_name" = "??" ]; then
@@ -100,16 +63,13 @@ else
   tty_path="/dev/${tty_name}"
 fi
 
-# Test seam. The target must already exist; the emit gates on `-w`.
+# Test seam.
 [ -n "${STEER_AGENT_TTY:-}" ] && tty_path="$STEER_AGENT_TTY"
 
-# --- State (synchronous: cheap, and everything downstream reads it) ----------
 case "$EVENT" in
   working | approval | idle | done)
-    # Store the raw cwd, not a resolved project name: resolving it needs a
-    # `git rev-parse` subprocess, and this path is synchronous on every prompt
-    # submission. The background block resolves it only when it needs a
-    # notification subtitle.
+    # Store the raw cwd, not a resolved project name: this path is
+    # synchronous, and resolving needs a git subprocess (done below instead).
     printf '%s\t%s\t%s\t%s\t%s\n' \
       "$EVENT" "$tty_path" "${cwd:-$PWD}" "${claude_pid:-0}" "$(date +%s)" >"$state_file" ||
       {
@@ -125,26 +85,14 @@ case "$EVENT" in
     ;;
 esac
 
-# --- Everything below can block. Detach it. ----------------------------------
+# Everything below can block; run it detached.
 {
   now="$(date +%s)"
 
-  # Age of a state file in seconds, defensively.
-  #
-  # Two hazards, both fatal in different ways if read naively:
-  #
-  # 1. A MISSING stamp (a file written by an older version of this script, which
-  #    persists across upgrades in ~/.cache) must read as ANCIENT, not as zero.
-  #    Zero means "just happened", so such a file would count toward the gauge
-  #    forever AND skip the age-based prune -- reintroducing the exact leak the
-  #    timestamp was added to close.
-  # 2. A NON-NUMERIC stamp is not merely wrong, it is lethal: under `set -u`,
-  #    $((now - "abc")) treats abc as a variable name and EXITS THE SHELL. That
-  #    happens inside this detached block before the prune loop can delete the
-  #    offending file, with stderr going to /dev/null -- so the whole feature
-  #    would go dark permanently and silently for every session. A cwd
-  #    containing a newline is enough to produce it (cut emits one field per
-  #    line, so `head -1` matters too).
+  # A MISSING stamp must read as ANCIENT, not zero, or such a file counts
+  # toward the gauge forever and skips the age-based prune. A NON-NUMERIC
+  # stamp is worse: under `set -u`, $((now - "abc")) exits the whole shell,
+  # silently killing this detached block for every session. Guard both.
   read_age() {
     local s
     s="$(cut -f5 "$1" 2>/dev/null | head -1)"
@@ -154,14 +102,10 @@ esac
     esac
   }
 
-  # Prune sessions whose owning process is gone (crash, kill -9, closed tab).
-  #
-  # The age sweep is scoped to files we CAN'T verify by pid (a failed ancestry
-  # walk writes 0, which `kill -0` can't test -- it would signal the whole
-  # process group). A blanket `find -mmin +720 -delete` was wrong: mtime only
-  # advances when an event fires, and an idle session generates none by
-  # definition, so it deleted live sessions that were still waiting and nothing
-  # would ever re-light them.
+  # Prune sessions whose owning process is gone. The age fallback below is only
+  # for files we can't verify by pid (pid 0 would make `kill -0` signal the
+  # whole process group); pid-verified files are never pruned by mtime, since
+  # an idle session generates none.
   for f in "$STATE_DIR"/*; do
     [ -e "$f" ] || continue
     pid="$(cut -f4 "$f" 2>/dev/null | head -1)"
@@ -176,16 +120,10 @@ esac
     esac
   done
 
-  # Only states that actually want a human count toward the gauge. "working"
-  # does not: a lit LED for a session that is busy and needs nothing trains you
-  # to ignore the light.
-  #
-  # Both waiting states age out. Without that the gauge saturates: `Stop` fires
-  # at the end of EVERY turn, so any session that has ever finished one sits in
-  # `waiting` until SessionEnd, and five open tabs peg the bar at 5 permanently.
-  # An approval also ages out separately and much sooner -- nothing signals that
-  # a permission prompt was answered, so otherwise the mic LED would pulse for
-  # the entire duration of whatever long-running tool it authorised.
+  # "working" doesn't count toward the gauge: a lit LED for a busy session
+  # trains you to ignore the light. Both waiting states age out (1800s) so a
+  # session doesn't peg the gauge forever after Stop; approval ages out
+  # separately and sooner (300s) since nothing signals a prompt was answered.
   waiting=0
   approvals=0
   for f in "$STATE_DIR"/*; do
@@ -204,12 +142,7 @@ esac
   done
   [ "$waiting" -gt 5 ] && waiting=5
 
-  # Guard on Steer already running: `open steer://...` LAUNCHES the app when it
-  # isn't, and a hook that boots an app on every prompt submission is hostile.
-  # Controller-connected is deliberately NOT checked -- the only query route
-  # returns via the pasteboard, and clobbering the clipboard on every hook fire
-  # is worse than a no-op. With no pad the URLs no-op behind Steer's own guard.
-  #
+  # Guard on Steer already running, or `open steer://...` launches the app.
   # -x, never -f: -f matches any argv merely naming the path, and would launch it.
   steer_bin=""
   steer_pid="$(pgrep -x Steer 2>/dev/null | head -1)"
@@ -230,10 +163,8 @@ esac
   steer "leds/${waiting}"
   if [ "$approvals" -gt 0 ]; then steer "micled/pulse"; else steer "micled/off"; fi
 
-  # What does this event have to say? Resolved BEFORE any Apple Event, so
-  # `working` and `end` -- the majority of fires -- never talk to Ghostty at
-  # all. Previously both focus queries ran on every prompt submission for a
-  # value that was then discarded.
+  # Resolved before any Apple Event, so `working` and `end` never talk to
+  # Ghostty at all.
   case "$EVENT" in
     approval) notify_msg="needs your approval" ;;
     done) notify_msg="finished" ;;
@@ -242,23 +173,13 @@ esac
   esac
   [ -n "$notify_msg" ] || exit 0
 
-  # Is this session's tab already in front of you?
+  # Only `done` (Stop, which fires every turn) is gated on tab focus; approval
+  # and idle already imply the human isn't typing, so a focused tab there
+  # isn't a present human and must not suppress the signal.
   #
-  # Only `done` is gated on this, and the distinction matters. Claude Code fires
-  # `permission_prompt` ONLY after 6 seconds without keyboard interaction, and
-  # `idle_prompt` when it's waiting on you -- both already mean "the human isn't
-  # typing". Suppressing those on focus drops the signal in exactly the case the
-  # feature exists for: you walked away and left the tab frontmost. A focused
-  # tab is not a present human.
-  #
-  # `Stop` has no such gate -- it fires at the end of every single turn -- so
-  # while you're actually watching a tab, buzzing and banner-ing each turn is
-  # pure noise. That one earns the check.
-  #
-  # Guarded on Ghostty already running for the same reason as Steer: a bare
-  # `tell application "Ghostty"` LAUNCHES it. The process comm is lowercase
-  # `ghostty`, so `pgrep -x Ghostty` does not match. `with timeout` bounds the
-  # Apple Event so a beachballed Ghostty can't wedge this block.
+  # Guarded on Ghostty already running, or a bare `tell application` launches
+  # it. Its comm is lowercase `ghostty`, so `pgrep -x Ghostty` misses it here
+  # on purpose. `with timeout` bounds the Apple Event.
   tab_is_focused() {
     [ -n "$tty_path" ] || return 1
     pgrep -f "Ghostty.app/Contents/MacOS" >/dev/null 2>&1 || return 1
@@ -281,9 +202,8 @@ APPLESCRIPT
     exit 0
   fi
 
-  # Resolve the project name here rather than in the synchronous path: from the
-  # git root, so a session that `cd`s into a subdirectory doesn't rename itself
-  # mid-flight (this reported "Steer" instead of "steer" after one cd).
+  # Resolved from the git root, so a session that `cd`s into a subdirectory
+  # doesn't rename itself mid-flight.
   project="$(basename "$(git -C "${cwd:-$PWD}" rev-parse --show-toplevel 2>/dev/null || printf '%s' "${cwd:-$PWD}")")"
 
   case "$EVENT" in
@@ -292,18 +212,14 @@ APPLESCRIPT
     idle) steer "haptic/pulse" ;;
   esac
 
-  # Ghostty binds a notification from a pty to that surface, so clicking it
-  # focuses the tab. It dedupes on text, not on session.
   if [ -n "$tty_path" ] && [ -w "$tty_path" ]; then
-    # Any C0 or `;` would break out of the sequence; `project` is a dirname.
+    # Any C0 or `;` would break out of the OSC sequence; `project` is a dirname.
     printf '\033]777;notify;%s;%s\007' \
       "$(printf '%s' "$project" | tr -d '\000-\037;')" \
       "$(printf '%s' "$notify_msg" | tr -d '\000-\037;')" \
       >"$tty_path" 2>/dev/null ||
       logger -t steer-agent "OSC write to ${tty_path} failed; ${EVENT} notification lost"
   else
-    # Deliberately silent: no surface to bind to, and a shell script cannot post
-    # an attributed banner. Claude Code's inputNeededNotifEnabled covers this.
     # Every logger call in this file lands at DEBUG; `log show` needs --debug.
     logger -t steer-agent "no tty for session; ${EVENT} notification suppressed"
   fi

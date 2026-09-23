@@ -68,11 +68,9 @@ def api(key, method, path, data=None):
 def configure(key, pid):
     print(f"Configuring profile {pid}\n")
 
-    # Security
     print("Security...", end=" ")
     print(api(key, "PATCH", f"{pid}/security", SECURITY))
 
-    # Remove all current blocklists, then add desired ones
     current = api(key, "GET", f"{pid}/privacy")
     for bl in current.get("blocklists", []):
         if bl["id"] not in BLOCKLISTS:
@@ -82,16 +80,13 @@ def configure(key, pid):
         print(f"  Add blocklist {bid}...", end=" ")
         print(api(key, "POST", f"{pid}/privacy/blocklists", {"id": bid}))
 
-    # Privacy flags
     print("Privacy...", end=" ")
     print(api(key, "PATCH", f"{pid}/privacy", PRIVACY))
 
-    # Native tracking
     for nid in NATIVES:
         print(f"  Native {nid}...", end=" ")
         print(api(key, "POST", f"{pid}/privacy/natives", {"id": nid}))
 
-    # Settings
     print("Settings...", end=" ")
     print(api(key, "PATCH", f"{pid}/settings", SETTINGS))
 

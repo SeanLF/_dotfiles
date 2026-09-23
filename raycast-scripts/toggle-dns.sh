@@ -9,10 +9,8 @@
 # @raycast.icon shield
 # @raycast.packageName Network
 
-# Tailscale DNS on: system resolver is 100.100.100.100, which answers MagicDNS
-# itself and forwards everything else to NextDNS over DoH.
-# Tailscale DNS off: the network's own DNS. Captive portals need this state to
-# show their login page; turn it back on afterwards.
+# Off switches to the network's own DNS; captive portals need that to show
+# their login page, so turn it back on afterwards.
 
 TS="${TAILSCALE_BIN:-/Applications/Tailscale.app/Contents/MacOS/Tailscale}"
 [[ -x "$TS" ]] || TS=$(command -v tailscale) || {

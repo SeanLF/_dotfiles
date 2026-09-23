@@ -7,37 +7,30 @@
 # Expected macOS defaults — domain:key=type:value
 # Types: bool, int, float, string
 declare -A EXPECTED=(
-  # Finder
   ["com.apple.finder:ShowPathbar"]="bool:true"
   ["com.apple.finder:ShowStatusBar"]="bool:true"
   ["com.apple.finder:_FXSortFoldersFirst"]="bool:true"
   ["com.apple.finder:FXDefaultSearchScope"]="string:SCcf" # Search current folder
   ["com.apple.finder:FXEnableExtensionChangeWarning"]="bool:false"
 
-  # Keyboard
   ["NSGlobalDomain:KeyRepeat"]="int:2"
   ["NSGlobalDomain:InitialKeyRepeat"]="int:15"
 
-  # Dock
   ["com.apple.dock:autohide"]="bool:true"
   ["com.apple.dock:show-recents"]="bool:false"
 
-  # Dialogs — expand save/print panels by default
   ["NSGlobalDomain:NSNavPanelExpandedStateForSaveMode"]="bool:true"
   ["NSGlobalDomain:NSNavPanelExpandedStateForSaveMode2"]="bool:true"
   ["NSGlobalDomain:PMPrintingExpandedStateForPrint"]="bool:true"
   ["NSGlobalDomain:PMPrintingExpandedStateForPrint2"]="bool:true"
 
-  # Text — disable smart quotes and dashes (interferes with code)
   ["NSGlobalDomain:NSAutomaticQuoteSubstitutionEnabled"]="bool:false"
   ["NSGlobalDomain:NSAutomaticDashSubstitutionEnabled"]="bool:false"
 
-  # Trackpad — tap to click
   ["com.apple.AppleMultitouchTrackpad:Clicking"]="bool:true"
   ["com.apple.driver.AppleBluetoothMultitouch.trackpad:Clicking"]="bool:true"
 )
 
-# Normalize boolean representations to "true"/"false"
 normalize_bool() {
   case "$1" in
     1 | true | TRUE | yes | YES) echo "true" ;;
@@ -46,7 +39,6 @@ normalize_bool() {
   esac
 }
 
-# Read a default value, normalizing booleans
 read_default() {
   local domain="$1" key="$2"
   local value
@@ -57,7 +49,6 @@ read_default() {
   normalize_bool "$value"
 }
 
-# Parse expected value format "type:value"
 parse_expected() {
   local spec="$1"
   local type="${spec%%:*}"
@@ -66,7 +57,6 @@ parse_expected() {
   [[ "$type" == "bool" ]] && normalize_bool "$value" || echo "$value"
 }
 
-# Check for drift
 check_defaults() {
   local drifted=()
 
@@ -96,7 +86,6 @@ check_defaults() {
   fi
 }
 
-# Apply all defaults
 apply_defaults() {
   echo "Applying macOS defaults..."
 
@@ -115,7 +104,6 @@ apply_defaults() {
     esac
   done
 
-  # Restart affected apps
   echo "Restarting Finder and Dock..."
   killall Finder Dock 2>/dev/null || true
 
@@ -123,7 +111,6 @@ apply_defaults() {
   echo "Note: Some changes may require logout/restart to take effect"
 }
 
-# Run directly
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   case "${1:-}" in
     --apply | -a)

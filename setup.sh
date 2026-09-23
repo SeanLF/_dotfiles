@@ -5,10 +5,8 @@ DOTFILES_DIR="$(cd "$(dirname "$0")" && pwd)"
 BACKUP_DIR="$HOME/.dotfiles-backup/$(date +%Y%m%d-%H%M%S)"
 DRY_RUN=false
 
-# Move a pre-existing file/dir out of the way before we clobber it, so the
-# previous contents are always recoverable from ~/.dotfiles-backup/<timestamp>/.
-# All current call sites pass paths under $HOME; guard against anything else
-# escaping the backup root via a leading slash.
+# Moves a pre-existing file/dir to ~/.dotfiles-backup/<timestamp>/ before we
+# clobber it. Guards against a path escaping the backup root via a leading slash.
 backup() {
   local path="$1"
   if [[ "$path" != "$HOME/"* ]]; then
@@ -21,11 +19,8 @@ backup() {
   info "  backed up to $dest"
 }
 
-# Default module order — also what `all` runs. `macos` is opt-in only.
-# `touchid` runs early (right after core) so every later sudo in the run —
-# notably the `dns` module's privileged writes — is a fingerprint tap, not a
-# password. The one exception is touchid's own write, which needs one password
-# sudo (you can't TouchID your way into enabling TouchID).
+# Also what `all` runs; `macos` is opt-in only. `touchid` runs early so every
+# later sudo (notably `dns`) is a fingerprint tap, not a password.
 DEFAULT_MODULES=(core touchid brew symlinks codex tools ai_clis ssh dns)
 
 # Silent success, loud failure
@@ -37,8 +32,7 @@ error() {
   exit 1
 }
 
-# Symlink a directory, replacing any pre-existing non-symlink after confirmation.
-# Used for directories where we can't diff contents (e.g. ~/.claude/commands).
+# For directories where we can't diff contents (e.g. ~/.claude/commands).
 symlink_dir() {
   local src="$1" dst="$2"
 
@@ -60,7 +54,6 @@ symlink_dir() {
   fi
 }
 
-# Symlink with drift detection
 symlink_with_diff() {
   local src="$1" dst="$2"
 
@@ -89,7 +82,6 @@ symlink_with_diff() {
   fi
 }
 
-# Module: Core (Xcode CLI tools + Homebrew)
 setup_core() {
   if ! xcode-select -p &>/dev/null; then
     drift "Xcode CLI tools not installed"
@@ -112,7 +104,6 @@ setup_core() {
   fi
 }
 
-# Module: Brew (install packages with drift detection)
 setup_brew() {
   if ! command -v brew &>/dev/null; then
     error "Homebrew not installed. Run: ./setup.sh core"
@@ -133,10 +124,9 @@ setup_brew() {
   fi
 }
 
-# Module: mise-managed runtimes and CLIs
 # Language runtimes and most GitHub-released CLIs live in .config/mise/config.toml.
 # Python-based CLIs (e.g. thefuck) are tracked in the Brewfile as `uv "..."` entries
-# and installed by `brew bundle` — so setup_brew handles those.
+# and installed by `brew bundle` — setup_brew handles those.
 setup_tools() {
   if ! command -v mise &>/dev/null; then
     error "mise not installed. Run: ./setup.sh brew"
@@ -175,11 +165,10 @@ setup_tools() {
   fi
 }
 
-# Module: AI CLIs without a brew/mise distribution path.
-# Claude Code and Antigravity CLI both ship as direct installers. They
-# self-update at runtime, so this module only handles first-time bootstrap;
-# bin/maintenance owns the upgrade path. Note: agy's install.sh self-verifies
-# via sha512; Claude's installer doesn't verify upstream.
+# Claude Code and Antigravity CLI ship as direct installers with no brew/mise
+# path; they self-update at runtime, so this only handles first-time bootstrap
+# (bin/maintenance owns the upgrade path). agy's install.sh self-verifies via
+# sha512; Claude's installer doesn't verify upstream.
 setup_ai_clis() {
   if command -v claude &>/dev/null; then
     info "claude: already installed"
@@ -196,23 +185,19 @@ setup_ai_clis() {
   fi
 }
 
-# Module: Symlinks
 setup_symlinks() {
-  # Create config directories
   mkdir -p "$HOME/.config/ghostty" "$HOME/.config/mise" "$HOME/.config/zed" \
     "$HOME/.local/bin" "$HOME/.claude" "$HOME/.codex/rules" "$HOME/.gemini" \
     "$HOME/.ssh" "$HOME/.playwright" "$HOME/Developer"
 
-  # Symlink scripts from bin/
   if compgen -G "$DOTFILES_DIR/bin/*" >/dev/null; then
     for script in "$DOTFILES_DIR"/bin/*; do
       symlink_with_diff "$script" "$HOME/.local/bin/$(basename "$script")"
     done
   fi
 
-  # Compile native helpers into ~/.local/bin (source in setup/, real binaries
-  # not symlinks; see setup/kbbl.swift for the keyboard-backlight story).
-  # Rebuilds only when source is newer than the installed binary.
+  # Compiled into ~/.local/bin (real binary, not a symlink); rebuilds only
+  # when source is newer than the installed binary.
   local kbbl_src="$DOTFILES_DIR/setup/kbbl.swift" kbbl_bin="$HOME/.local/bin/kbbl"
   if [[ -f "$kbbl_src" ]]; then
     if ! command -v swiftc &>/dev/null; then
@@ -228,7 +213,6 @@ setup_symlinks() {
     fi
   fi
 
-  # Symlink dotfiles
   symlink_with_diff "$DOTFILES_DIR/.zshrc" "$HOME/.zshrc"
   symlink_with_diff "$DOTFILES_DIR/aliases.zsh" "$HOME/.aliases.zsh"
   symlink_with_diff "$DOTFILES_DIR/.gitconfig" "$HOME/.gitconfig"
@@ -249,12 +233,11 @@ setup_symlinks() {
   symlink_with_diff "$DOTFILES_DIR/.gemini/settings.json" "$HOME/.gemini/settings.json"
   symlink_with_diff "$DOTFILES_DIR/.playwright/cli.config.json" "$HOME/.playwright/cli.config.json"
 
-  # SSH config (1Password agent) and allowed signers (ssh-based commit signing)
   for f in config allowed_signers; do
     symlink_with_diff "$DOTFILES_DIR/.ssh/$f" "$HOME/.ssh/$f"
   done
 
-  # Claude commands, hooks, and skills directories (can't diff contents, so replace wholesale)
+  # Directories: can't diff contents, so replace wholesale.
   symlink_dir "$DOTFILES_DIR/.claude/commands" "$HOME/.claude/commands"
   symlink_dir "$DOTFILES_DIR/.claude/hooks" "$HOME/.claude/hooks"
   symlink_dir "$DOTFILES_DIR/.claude/agents" "$HOME/.claude/agents"
@@ -264,7 +247,6 @@ setup_symlinks() {
   info "Symlinks: done"
 }
 
-# Module: Codex config (bin/codex-config)
 setup_codex() {
   local tool="$DOTFILES_DIR/bin/codex-config" out rc
   if out=$("$tool" --check 2>&1); then rc=0; else rc=$?; fi
@@ -289,7 +271,6 @@ setup_codex() {
   fi
 }
 
-# Module: SSH (verify 1Password agent)
 setup_ssh() {
   local agent_sock="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
 
@@ -299,7 +280,6 @@ setup_ssh() {
     return 1
   fi
 
-  # Test agent
   if SSH_AUTH_SOCK="$agent_sock" ssh-add -l &>/dev/null; then
     info "SSH: 1Password agent working"
   else
@@ -308,12 +288,10 @@ setup_ssh() {
   fi
 }
 
-# Module: TouchID for sudo (native prompt via Apple's pam drop-in)
-# /etc/pam.d/sudo_local is Apple's supported include (Sonoma+), so unlike
-# editing /etc/pam.d/sudo directly it survives macOS updates. pam_tid.so ships
-# with macOS — no Homebrew dependency. Canonical content is tracked in
-# setup/sudo_local. The file is root-owned but world-readable and holds no
-# secrets, so we content-compare without sudo and only escalate to write.
+# /etc/pam.d/sudo_local is Apple's supported include (Sonoma+); editing
+# /etc/pam.d/sudo directly wouldn't survive macOS updates. The file is
+# root-owned but world-readable, so we content-compare without sudo and only
+# escalate to write.
 setup_touchid() {
   local src="$DOTFILES_DIR/setup/sudo_local"
   local dst="/etc/pam.d/sudo_local"
@@ -323,10 +301,8 @@ setup_touchid() {
     return 0
   fi
 
-  # pam_tid only engages if /etc/pam.d/sudo includes sudo_local (Apple's default
-  # on Sonoma+). On a customized or older sudo the drop-in is inert, so warn
-  # rather than claim a result we can't back up. BRE pattern: this module runs
-  # before brew installs ugrep, so grep here is system BSD grep on a fresh Mac.
+  # BRE pattern: this runs before brew installs ugrep, so grep here is system
+  # BSD grep on a fresh Mac.
   if ! grep -q 'auth.*include.*sudo_local' /etc/pam.d/sudo; then
     warn "/etc/pam.d/sudo does not include sudo_local — TouchID drop-in will be inert"
   fi
@@ -338,13 +314,12 @@ setup_touchid() {
 
   drift "TouchID sudo not enabled or drifted ($dst)"
   $DRY_RUN && return 0
-  # install(1) writes atomically (temp + rename) and sets the mode in one call —
-  # safer than cp+chmod for an auth-critical file that must never be truncated.
+  # install(1) writes atomically (temp + rename); safer than cp+chmod for an
+  # auth-critical file that must never be truncated.
   sudo install -m 444 "$src" "$dst"
   info "TouchID sudo: enabled"
 }
 
-# Module: macOS defaults
 setup_macos() {
   local macos_script="$DOTFILES_DIR/setup/macos_defaults.sh"
   if [[ ! -f "$macos_script" ]]; then
@@ -367,7 +342,6 @@ setup_macos() {
   "$bash_path" "$macos_script"
 }
 
-# Module: DNS (Tailscale DNS -> NextDNS; sudoers for the Raycast DNS scripts)
 setup_dns() {
   local ts="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
   if [[ ! -x "$ts" ]]; then
@@ -386,10 +360,8 @@ setup_dns() {
   local sudoers="/etc/sudoers.d/raycast-dns"
   local sudoers_line="$USER ALL=(ALL) NOPASSWD: /usr/bin/dscacheutil -flushcache, /usr/bin/killall -HUP mDNSResponder"
 
-  # Sudoers file is root-owned 0440, so reading it for content comparison needs
-  # sudo. Dry-runs must never prompt for a password (would deadlock in pre-push
-  # hooks with no TTY), so probe with `sudo -n` first: if creds are cached we
-  # still catch content drift, otherwise we fall back to a soft report.
+  # Dry-runs must never prompt for a password (would deadlock in pre-push
+  # hooks with no TTY), so probe with `sudo -n` first.
   write_sudoers() {
     echo "$sudoers_line" | sudo tee "$sudoers" >/dev/null
     sudo chmod 0440 "$sudoers"
@@ -408,7 +380,6 @@ setup_dns() {
   info "DNS: done"
 }
 
-# Help
 show_help() {
   cat <<EOF
 Usage: ./setup.sh [--dry-run] [module...]
@@ -437,11 +408,9 @@ Examples:
 EOF
 }
 
-# Main
 main() {
   local modules=()
 
-  # Parse flags
   for arg in "$@"; do
     case "$arg" in
       --dry-run) DRY_RUN=true ;;
@@ -451,7 +420,6 @@ main() {
 
   $DRY_RUN && info "=== DRY RUN (no changes) ==="
 
-  # No args or `all` → run the canonical default list
   if [[ ${#modules[@]} -eq 0 ]] || [[ " ${modules[*]} " == *" all "* ]]; then
     modules=("${DEFAULT_MODULES[@]}")
   fi

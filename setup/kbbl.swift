@@ -1,30 +1,15 @@
 #!/usr/bin/env swift
-//
 // kbbl — control the MacBook keyboard backlight from the CLI.
 //
-//   kbbl up   [steps]   brighten (default 1 step)
-//   kbbl down [steps]   dim
-//   kbbl toggle         on/off (unreliable on some models -- prefer up/down)
+//   kbbl up|down [steps]   step the backlight (default 1)
+//   kbbl toggle            on/off (unreliable on some models)
 //
-// WHY THIS APPROACH (the short version of a long investigation):
-//   On Apple Silicon / macOS 26+ the built-in keyboard backlight is owned
-//   exclusively by SkyLight/WindowServer. The CoreBrightness private API
-//   (KeyboardBrightnessClient.setBrightness:forKeyboard:), which every
-//   known tool uses (KBPulse, mac-brightnessctl), is ACCEPTED by
-//   corebrightnessd but never reaches the panel for an unentitled binary;
-//   it's decorative. The Control Center slider works only because it carries
-//   Apple-private entitlements (SkyLight.displaycontrol) that AMFI won't let
-//   a self-signed binary hold.
-//
-//   The one path that needs no entitlement and no driver: post an
-//   NSSystemDefined "aux key" HID event for NX_KEYTYPE_ILLUMINATION_UP/DOWN
-//   (21/22). It enters the trusted input path exactly like the old F5/F6
-//   illumination keys, so SkyLight drives the backlight. We become the
-//   keyboard instead of asking the daemon.
-//
-// Caveat: the app that triggers this (Terminal, Automator/Shortcuts runner)
-// may need Accessibility permission to post HID events.
-//
+// The CoreBrightness private API other tools use (KeyboardBrightnessClient)
+// is accepted by corebrightnessd but never reaches the panel for an
+// unentitled binary. Posting an NX_KEYTYPE_ILLUMINATION_UP/DOWN aux-key HID
+// event is the one path that works unsigned: it enters the trusted input
+// path exactly like the old F5/F6 keys, so SkyLight drives the backlight.
+// Needs Accessibility permission on the triggering app to post HID events.
 import Cocoa
 
 // NX_KEYTYPE_* from IOKit/hidsystem/ev_keymap.h
@@ -44,10 +29,9 @@ func postAux(_ key: Int, down: Bool) {
     cgEvent.post(tap: .cghidEventTap)
 }
 
-// A brief key-down hold is required: macOS debounces a zero-duration synthetic
-// press away (a lone down/up does nothing), so without this `kbbl up 1` is a no-op.
+// macOS debounces a zero-duration synthetic press away, so without this hold
+// `kbbl up 1` is a no-op.
 let holdMicros: UInt32 = 60_000
-// Pause between presses when ramping multiple steps in one invocation.
 let stepGapMicros: UInt32 = 60_000
 
 func press(_ key: Int) {
