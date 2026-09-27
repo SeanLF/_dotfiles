@@ -43,8 +43,6 @@ brew "hey"
 brew "imessage-exporter"
 # Update of iperf: measures TCP, UDP, and SCTP bandwidth
 brew "iperf3"
-# Style and grammar checker
-brew "languagetool"
 # Pager program similar to more
 brew "less"
 # YAML Parser
