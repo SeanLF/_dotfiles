@@ -5,7 +5,7 @@ uv = "latest"
 python = "latest"
 node = "latest"
 terraform = "latest"
-rust = "latest"
+rust = "stable"      # rustup's channel; "latest" installs a versioned duplicate of it
 
 # CLIs (migrated from Homebrew — aqua backend where available, github fallback)
 "aqua:sharkdp/bat" = "latest"
