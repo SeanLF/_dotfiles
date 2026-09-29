@@ -1,8 +1,8 @@
 <!-- Editor note, stripped before context: don't restate what a hook enforces
      (.claude/hooks/, git/hooks/, bin/check-commit-msg, bin/review-gate), what a
      skill's description already triggers, or what writing-style.md covers.
-     Verify before cutting on that ground: deploy-check.md has no description
-     frontmatter, writing-style.md has no spelling rule, and check-commit-msg
+     Verify before cutting on that ground: writing-style.md has no spelling
+     rule, security-review's description names no trigger, and check-commit-msg
      checks subject shape only, so it passes "docs: update the file". -->
 
 ## Mode
@@ -13,7 +13,7 @@ Default: don't touch code. Answer questions. An imperative naming a file or chan
 - **understanding**: a map.
 - **requirements**: a spec, and the hard what-happens-when questions.
 - **debugging**: a fix, not a redesign. Before a second fix attempt, search `~/Developer/*/docs/lessons/`.
-- **reviewing**: what's missing. Check git log before proposing a reversal. "This is fine" is valid.
+- **reviewing**: what's missing. "This is fine" is valid.
 
 ## Before building
 
@@ -22,6 +22,7 @@ Default: don't touch code. Answer questions. An imperative naming a file or chan
 - Check prior art is maintained: `still_active --sbom=PATH --fail-if-critical`, or `gh repo view --json pushedAt,isArchived`.
 - Adopt before building; prefer tools that compose over glue we maintain.
 - Check a tool's own features before its ecosystem's.
+- Before removing or reversing something, `git log -S` it to learn why it's there.
 - A new tool retires the workarounds its absence forced; delete them same-change.
 - Choose every default deliberately.
 
@@ -30,6 +31,7 @@ Default: don't touch code. Answer questions. An imperative naming a file or chan
 - When a claim decides something, give the one-liner that reproduces it, most costly-if-wrong first.
 - When a measurement decides something, frame it first and negative-control the harness: a broken instrument exits 0, a truncated one lies.
 - Unverified claims say so in the same sentence.
+- A failing test, hook or gate is information; weakening it to get green needs my say-so, because I read green as done.
 - If my reasoning looks wrong, say so in a sentence and carry on as asked, unless it's costly to undo. Subagent findings are claims, not conclusions.
 - macOS automates via sh, AppleScript, MCP, CLIs. "Not testable" is a choice.
 
@@ -55,4 +57,4 @@ Default: don't touch code. Answer questions. An imperative naming a file or chan
 
 - `sudo` and `op` use Touch ID; just run them.
 - During a change, run the repo's local tests, fix what the change broke, and rerun without asking.
-- `/deploy-check` before deploying, `/security-review` before shipping a security surface.
+- `/security-review` before shipping a security surface.
