@@ -81,6 +81,8 @@ brew "syft"
 brew "terminal-notifier"
 # OCR (Optical Character Recognition) engine
 brew "tesseract"
+# Terminal multiplexer
+brew "tmux"
 # Vulnerability scanner for container images, file systems, and Git repos
 brew "trivy"
 # Your CLI home video recorder
@@ -99,6 +101,8 @@ brew "zsh-syntax-highlighting"
 cask "1password"
 # Command-line interface for 1Password
 cask "1password-cli"
+# 3D creation suite
+cask "blender"
 # Get the most out of a fixed Claude subscription pool
 cask "seanlf/tap/ccpool", trusted: true
 # OpenAI's official ChatGPT desktop app
@@ -137,16 +141,15 @@ cask "signal"
 cask "stremio@beta"
 # Mesh VPN based on WireGuard
 cask "tailscale-app"
+# AI image upscaler
+cask "upscayl"
 # Multiplayer code editor
 cask "zed"
-# Video communication and virtual meeting platform
-cask "zoom"
 mas "1Password for Safari", id: 1569813296
 mas "Asobi", id: 6754204833
 mas "Consent-O-Matic", id: 1606897889
 mas "Flighty", id: 1358823008
 mas "TestFlight", id: 899247664
-mas "WhatsApp", id: 310633997
 mas "Xcode", id: 497799835
 go "cmd/go"
 go "cmd/gofmt"
