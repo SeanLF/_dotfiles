@@ -105,8 +105,9 @@ esac
     # Read per send: a Steer quitting mid-run reads empty, and gets nothing.
     bin="$(ps -o comm= -p "$steer_pid" 2>/dev/null)"
     app="${bin%/Contents/MacOS/*}"
+    # Known Steers only: any process can be named Steer, and `open -a` would relaunch its bundle.
     case "$app" in
-      /*.app) open -g -a "$app" "steer://$1" >/dev/null 2>&1 ;;
+      /Applications/Steer.app | "$HOME"/Developer/steer/*.app) open -g -a "$app" "steer://$1" >/dev/null 2>&1 ;;
     esac
   }
 

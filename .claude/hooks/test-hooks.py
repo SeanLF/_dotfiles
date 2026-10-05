@@ -169,12 +169,14 @@ def steer_opens(comm):
 
 for label, comm, bundle in [
     ("installed", "/Applications/Steer.app/Contents/MacOS/Steer", "/Applications/Steer.app"),
-    ("Dev", "/Users/sean/Developer/steer/Steer Dev.app/Contents/MacOS/Steer", "/Users/sean/Developer/steer/Steer Dev.app"),
+    ("Dev", f"{pathlib.Path.home()}/Developer/steer/Steer Dev.app/Contents/MacOS/Steer", f"{pathlib.Path.home()}/Developer/steer/Steer Dev.app"),
     # The case that launched the installed app beside a benchmark: a release build from the repo.
-    ("release build", "/Users/sean/Developer/steer/Steer.app/Contents/MacOS/Steer", "/Users/sean/Developer/steer/Steer.app"),
+    ("release build", f"{pathlib.Path.home()}/Developer/steer/Steer.app/Contents/MacOS/Steer", f"{pathlib.Path.home()}/Developer/steer/Steer.app"),
     # Quitting between pgrep and the send: ps reads empty, so nothing may be sent.
     ("exiting", "", None),
     ("not a bundle", "/usr/local/bin/Steer", None),
+    # Any process can call itself Steer; only the installed app and the checkout's builds are opened.
+    ("foreign bundle", "/tmp/evil.app/Contents/MacOS/Steer", None),
 ]:
     calls = steer_opens(comm)
     want_ok = all(c.startswith(f"-g|-a|{bundle}|steer://") for c in calls) and len(calls) == 3 if bundle else calls == []
