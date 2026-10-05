@@ -10,7 +10,6 @@ set -uo pipefail
 # Fixed path, not $TMPDIR: TMPDIR is per-bootstrap-namespace, so a login shell,
 # a LaunchAgent and SSH would each get a different directory.
 readonly STATE_DIR="${STEER_STATE_DIR:-${HOME}/.cache/claude-steer-sessions}"
-readonly DEV_APP="/Users/sean/Developer/steer/Steer Dev.app"
 EVENT="${1:-}"
 
 mkdir -p "$STATE_DIR" 2>/dev/null
@@ -95,15 +94,19 @@ esac
   done
   [ "$waiting" -gt 5 ] && waiting=5
 
-  # Only when Steer is already running, or `open steer://` launches it.
+  # Only to a Steer that is running, addressed by its own bundle. A bare
+  # `open steer://` goes to the scheme's handler, /Applications/Steer.app,
+  # and launches it beside a Dev or release build.
   # -x, never -f: -f matches any argv naming the path and would launch it.
   steer_pid="$(pgrep -x Steer 2>/dev/null | head -1)"
   [ -n "$steer_pid" ] || exit 0
-  steer_bin="$(ps -o comm= -p "$steer_pid" 2>/dev/null)"
   steer() {
-    case "$steer_bin" in
-      *"Steer Dev.app"*) open -g -a "$DEV_APP" "steer://$1" >/dev/null 2>&1 ;;
-      *) open -g "steer://$1" >/dev/null 2>&1 ;;
+    local bin app
+    # Read per send: a Steer quitting mid-run reads empty, and gets nothing.
+    bin="$(ps -o comm= -p "$steer_pid" 2>/dev/null)"
+    app="${bin%/Contents/MacOS/*}"
+    case "$app" in
+      /*.app) open -g -a "$app" "steer://$1" >/dev/null 2>&1 ;;
     esac
   }
 

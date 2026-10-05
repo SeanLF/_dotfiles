@@ -135,4 +135,51 @@ for event, running, kind, want in [
     print(f"{'ok  ' if got == want else 'FAIL'} {event} with running {kind if running else 'nothing'}: {got} (want {want})")
 
 print()
+print("=== steer.sh: sends go to the running Steer's own bundle, never the scheme's handler ===")
+import time
+
+
+def steer_opens(comm):
+    """The `open` calls steer.sh makes while `comm` is what ps reports for the running Steer."""
+    with tempfile.TemporaryDirectory() as d:
+        shims = pathlib.Path(d, "bin")
+        shims.mkdir()
+        log = pathlib.Path(d, "open.log")
+        (shims / "pgrep").write_text("#!/bin/sh\necho 4242\n")
+        # Only the pid lookup is faked; the session walk's `ps -eo` falls through to the real ps.
+        (shims / "ps").write_text(
+            f"#!/bin/sh\ncase \"$*\" in *'-p 4242'*) printf '%s\\n' {json.dumps(comm)} ;; *) exec /bin/ps \"$@\" ;; esac\n"
+        )
+        (shims / "open").write_text(f"#!/bin/sh\nprintf '%s|' \"$@\" >>{log}\necho >>{log}\n")
+        for tool in ("pgrep", "ps", "open"):
+            (shims / tool).chmod(0o755)
+        env = dict(os.environ, PATH=f"{shims}:{os.environ['PATH']}", STEER_STATE_DIR=d + "/state")
+        subprocess.run(
+            [str(STEER), "done"],
+            input=json.dumps({"session_id": "tst", "cwd": d}),
+            env=env, capture_output=True, text=True, check=False,
+        )
+        # The sends run detached; three lines (leds, micled, haptic) or a settled silence.
+        for _ in range(30):
+            if log.exists() and len(log.read_text().splitlines()) >= 3:
+                break
+            time.sleep(0.1)
+        return log.read_text().splitlines() if log.exists() else []
+
+
+for label, comm, bundle in [
+    ("installed", "/Applications/Steer.app/Contents/MacOS/Steer", "/Applications/Steer.app"),
+    ("Dev", "/Users/sean/Developer/steer/Steer Dev.app/Contents/MacOS/Steer", "/Users/sean/Developer/steer/Steer Dev.app"),
+    # The case that launched the installed app beside a benchmark: a release build from the repo.
+    ("release build", "/Users/sean/Developer/steer/Steer.app/Contents/MacOS/Steer", "/Users/sean/Developer/steer/Steer.app"),
+    # Quitting between pgrep and the send: ps reads empty, so nothing may be sent.
+    ("exiting", "", None),
+    ("not a bundle", "/usr/local/bin/Steer", None),
+]:
+    calls = steer_opens(comm)
+    want_ok = all(c.startswith(f"-g|-a|{bundle}|steer://") for c in calls) and len(calls) == 3 if bundle else calls == []
+    fails += not want_ok
+    print(f"{'ok  ' if want_ok else 'FAIL'} {label}: {calls}")
+
+print()
 print("FAILURES:", fails)
