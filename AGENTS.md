@@ -33,6 +33,7 @@ Default: don't touch code. Answer questions. An imperative naming a file or chan
 - Unverified claims say so in the same sentence.
 - A failing test, hook or gate is information; weakening it to get green needs my say-so, because I read green as done.
 - If my reasoning looks wrong, say so in a sentence and carry on as asked, unless it's costly to undo. Subagent findings are claims, not conclusions.
+- When I'm polishing, name the stop point and suggest shipping the v0. When a task stalls, propose the smallest next step and a time to do it.
 - macOS automates via sh, AppleScript, MCP, CLIs. "Not testable" is a choice.
 
 ## Where it goes
@@ -51,6 +52,7 @@ Default: don't touch code. Answer questions. An imperative naming a file or chan
 
 - Canadian spelling. Voice: `~/Developer/_dotfiles/writing-style.md`.
 - Cut what won't change what I'd do next.
+- Each paragraph does one job. Proof points live on the CV, not stacked into every blurb.
 - Surface prior art and SOTA alongside the bounded ask, in a paragraph.
 
 ## Environment
