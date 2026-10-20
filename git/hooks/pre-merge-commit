@@ -1,0 +1,24 @@
+#!/bin/bash
+# Global pre-merge-commit. core.hooksPath replaces the whole hooks directory, so this must
+# hand off to lefthook or repos relying on it silently lose their checks.
+#
+# SECURITY: lefthook.yml is repo-controlled and runs arbitrary commands. Git
+# never clones .git/hooks precisely so that cloning cannot execute a repo's
+# code. Delegating unconditionally from a global hook hands that protection
+# back, so delegation needs per-repo opt-in. `git clone` does not import the
+# source repo's local config, which is what makes this a real boundary.
+#
+# Trust a repo with:  git config --local hooks.lefthook true
+# Read at --local scope deliberately: a global value would trust every repo,
+# including hostile clones, from a single accidental setting.
+set -euo pipefail
+
+if [ -f lefthook.yml ]; then
+  if [ "$(git config --local --bool hooks.lefthook 2>/dev/null || echo false)" != "true" ]; then
+    echo "pre-merge-commit: lefthook.yml present but this repo is not trusted to run it." >&2
+    echo "  if you trust it: git config --local hooks.lefthook true" >&2
+  elif command -v lefthook >/dev/null 2>&1; then
+    lefthook run --no-auto-install pre-merge-commit "$@"
+  fi
+fi
+
