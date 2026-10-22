@@ -1,4 +1,5 @@
 tap "seanlf/tap", "https://github.com/SeanLF/homebrew-tap"
+tap "tbvdm/tap"
 # Static checker for GitHub Actions workflow files
 brew "actionlint"
 # Library for command-line editing
@@ -29,6 +30,8 @@ brew "gawk"
 brew "git"
 # Quickly rewrite git repository history
 brew "git-filter-repo"
+# Audit git repos for secrets
+brew "gitleaks"
 # GNU implementation of the famous stream editor
 brew "gnu-sed"
 # GNU Privacy Guard (OpenPGP)
@@ -53,6 +56,8 @@ brew "llama.cpp"
 brew "make"
 # Mac App Store command-line interface
 brew "mas"
+# Control and observe media playback from the command-line
+brew "media-control"
 # CLI interface for Mercury banking
 brew "mercury-cli"
 # Polyglot runtime manager (asdf rust clone)
@@ -61,10 +66,14 @@ brew "mise"
 brew "mole"
 # Ping Tool in Rust with Real-Time Data and Visualizations
 brew "nbping"
+# Very fast SIMD-first image comparison library (with nodejs API)
+brew "odiff"
 # OpenBSD freely-licensed SSH connectivity tools
 brew "openssh"
 # Swiss-army knife of markup format conversion
 brew "pandoc"
+# Shell command parallelization utility
+brew "parallel"
 # Highly capable, feature-rich programming language
 brew "perl"
 # PDF rendering library (based on the xpdf-3.0 code base)
@@ -97,6 +106,7 @@ brew "xcodes"
 brew "zsh-autosuggestions"
 # Fish shell like syntax highlighting for zsh
 brew "zsh-syntax-highlighting"
+brew "tbvdm/tap/sigtop", args: ["HEAD"], trusted: true
 # Password manager that keeps all passwords secure behind one password
 cask "1password"
 # Command-line interface for 1Password
@@ -150,6 +160,7 @@ mas "Asobi", id: 6754204833
 mas "Consent-O-Matic", id: 1606897889
 mas "Flighty", id: 1358823008
 mas "TestFlight", id: 899247664
+mas "WhatsApp", id: 310633997
 mas "Xcode", id: 497799835
 go "cmd/go"
 go "cmd/gofmt"

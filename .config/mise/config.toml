@@ -28,6 +28,7 @@ rust = "stable"      # rustup's channel; "latest" installs a versioned duplicate
 "aqua:tamasfe/taplo" = "latest"
 "npm:prettier" = "latest"
 "aqua:openai/codex" = "latest"             # codex — native Rust binary
+"aqua:anomalyco/opencode" = "latest"       # opencode
 "aqua:starship/starship" = "latest"
 # tlrc uses the github backend — the aqua registry entry predates upstream's
 # aarch64-apple-darwin builds and serves x86_64 via rosetta2, which this Mac can't run
