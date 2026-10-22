@@ -1,7 +1,7 @@
 # Ghostty Configuration
 
 # Automatically switch between light and dark themes based on system appearance
-theme = light:Rose Pine Dawn,dark:Rose Pine
+theme = light:Modus Operandi,dark:Modus Vivendi Tinted
 
 # macOS: Integrate tabs into titlebar for cleaner look
 macos-titlebar-style = tabs
