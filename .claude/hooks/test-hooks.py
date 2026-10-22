@@ -179,7 +179,13 @@ for label, comm, bundle in [
     ("foreign bundle", "/tmp/evil.app/Contents/MacOS/Steer", None),
 ]:
     calls = steer_opens(comm)
-    want_ok = all(c.startswith(f"-g|-a|{bundle}|steer://") for c in calls) and len(calls) == 3 if bundle else calls == []
+    # Steer ignores an unknown route, so a misspelt one fails silently on the controller.
+    routes = sorted(c.split("|steer://", 1)[-1].split("/", 1)[0] for c in calls)
+    want_ok = (
+        all(c.startswith(f"-g|-a|{bundle}|steer://") for c in calls) and routes == ["haptic", "mute-light", "player-lights"]
+        if bundle
+        else calls == []
+    )
     fails += not want_ok
     print(f"{'ok  ' if want_ok else 'FAIL'} {label}: {calls}")
 
