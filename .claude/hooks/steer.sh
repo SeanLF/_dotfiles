@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Drives the DualSense through Steer's steer:// surface from Claude Code and Codex
-# hook events: LEDs count waiting sessions, haptics mark approval/idle/done.
+# hook events: player lights count waiting sessions, haptics mark approval/idle/done.
 # Desktop notifications are Claude Code's own (Ghostty, gated on "away").
 #
 #   steer.sh <working|approval|idle|done|end>
@@ -111,8 +111,8 @@ esac
     esac
   }
 
-  steer "leds/${waiting}"
-  if [ "$approvals" -gt 0 ]; then steer "micled/pulse"; else steer "micled/off"; fi
+  steer "player-lights/${waiting}"
+  if [ "$approvals" -gt 0 ]; then steer "mute-light/pulse"; else steer "mute-light/off"; fi
   case "$EVENT" in
     approval) steer "haptic/warning" ;;
     done) steer "haptic/double" ;;

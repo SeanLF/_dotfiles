@@ -159,7 +159,7 @@ def steer_opens(comm):
             input=json.dumps({"session_id": "tst", "cwd": d}),
             env=env, capture_output=True, text=True, check=False,
         )
-        # The sends run detached; three lines (leds, micled, haptic) or a settled silence.
+        # The sends run detached; three lines (player-lights, mute-light, haptic) or a settled silence.
         for _ in range(30):
             if log.exists() and len(log.read_text().splitlines()) >= 3:
                 break
