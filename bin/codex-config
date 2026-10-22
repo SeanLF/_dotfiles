@@ -24,10 +24,9 @@ import os
 import re
 import shutil
 import sys
+import tomllib
 from pathlib import Path
 from typing import Any
-
-import tomllib
 
 FORBIDDEN_IN_TRACKED = (("projects",), ("hooks", "state"))
 BARE_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -258,7 +257,7 @@ def main() -> int:
     if args.live.exists() and args.live.read_text() == text:
         return 0
     if args.live.exists():
-        stamp = dt.datetime.now(tz=dt.timezone.utc).astimezone().strftime("%Y%m%d-%H%M%S")
+        stamp = dt.datetime.now(tz=dt.UTC).astimezone().strftime("%Y%m%d-%H%M%S")
         backup_dir = args.backup_dir or Path.home() / ".dotfiles-backup" / stamp
         dest = backup_dir / ".codex" / "config.toml"
         dest.parent.mkdir(parents=True, exist_ok=True)

@@ -144,7 +144,7 @@ def load_pairs():
                 cur = sum(u.get(k, 0) for k in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
                 if prev < 5000:
                     continue
-                t0, t1 = (datetime.fromisoformat(x["timestamp"].replace("Z", "+00:00")) for x in (pr, r))
+                t0, t1 = (datetime.fromisoformat(x["timestamp"]) for x in (pr, r))
                 pairs.append({
                     "gap": (t1 - t0).total_seconds(), "prev": prev, "cur": cur,
                     "read": u.get("cache_read_input_tokens", 0),
