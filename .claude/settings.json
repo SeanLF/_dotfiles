@@ -1,8 +1,8 @@
 {
   "cleanupPeriodDays": 100000,
   "permissions": {
-    "defaultMode": "auto",
-    "deny": ["Bash(git push --no-verify *)", "Bash(git push * --no-verify*)"]
+    "deny": ["Bash(git push --no-verify *)", "Bash(git push * --no-verify*)"],
+    "defaultMode": "auto"
   },
   "disableClaudeAiConnectors": true,
   "hooks": {
@@ -122,14 +122,37 @@
     "claude-code-setup@claude-plugins-official": false,
     "rust-analyzer-lsp@claude-plugins-official": false,
     "ruby-lsp@claude-plugins-official": false,
-    "swift-lsp@claude-plugins-official": true
+    "swift-lsp@claude-plugins-official": true,
+    "codex@openai-codex": true,
+    "typesafe@typesafe-ai": true
   },
-  "extraKnownMarketplaces": {},
+  "extraKnownMarketplaces": {
+    "marketingskills": {
+      "source": {
+        "source": "github",
+        "repo": "coreyhaines31/marketingskills"
+      }
+    },
+    "openai-codex": {
+      "source": {
+        "source": "github",
+        "repo": "openai/codex-plugin-cc"
+      }
+    },
+    "typesafe-ai": {
+      "source": {
+        "source": "github",
+        "repo": "typesafe-ai/skills"
+      }
+    }
+  },
+  "feedbackDrafts": "off",
   "tui": "fullscreen",
   "skipDangerousModePermissionPrompt": true,
   "theme": "auto",
   "verbose": false,
   "preferredNotifChannel": "ghostty",
+  "switchModelsOnFlag": false,
   "remoteControlAtStartup": true,
   "inputNeededNotifEnabled": false,
   "agentPushNotifEnabled": true,
