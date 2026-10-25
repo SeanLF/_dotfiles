@@ -90,10 +90,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "rtk hook claude"
-          },
-          {
-            "type": "command",
             "command": "~/.claude/hooks/search-tool-guard.sh"
           }
         ]
@@ -124,7 +120,8 @@
     "ruby-lsp@claude-plugins-official": false,
     "swift-lsp@claude-plugins-official": true,
     "codex@openai-codex": true,
-    "typesafe@typesafe-ai": true
+    "typesafe@typesafe-ai": true,
+    "via@claude-code-subagent-harnesses": true
   },
   "extraKnownMarketplaces": {
     "marketingskills": {
@@ -144,9 +141,23 @@
         "source": "github",
         "repo": "typesafe-ai/skills"
       }
+    },
+    "claude-code-subagent-harnesses": {
+      "source": {
+        "source": "github",
+        "repo": "SeanLF/claude-code-subagent-harnesses"
+      },
+      "autoUpdate": true
     }
   },
   "feedbackDrafts": "off",
+  "pluginConfigs": {
+    "via@claude-code-subagent-harnesses": {
+      "options": {
+        "timeoutMinutes": 55
+      }
+    }
+  },
   "tui": "fullscreen",
   "skipDangerousModePermissionPrompt": true,
   "theme": "auto",

@@ -48,12 +48,7 @@ done < <(jq -r '.. | objects | select(.type? == "command") | .command' "$CODEX")
 
 echo
 echo "=== parity with .claude/settings.json ==="
-if command -v rtk >/dev/null 2>&1; then
-  # rtk 1.0.1 ships `rtk hook codex`; wiring it is deferred, so the exclusion below stays.
-  check "rtk has a Codex processor, still unwired (wire it and drop the exclusion)" \
-    "$(rtk hook --help 2>&1 | grep -ci codex)/$(grep -c 'rtk hook' "$CODEX")" 1/0
-fi
-claude_bash=$(jq -r '.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[].command' "$CLAUDE" | grep -v '^rtk hook claude$' | sort)
+claude_bash=$(jq -r '.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[].command' "$CLAUDE" | sort)
 codex_bash=$(jq -r '.hooks.PreToolUse[] | select(.matcher == "^Bash$") | .hooks[].command' "$CODEX" | sort)
 check "Bash guards are the same set, in the same order, as Claude's" "$codex_bash" "$claude_bash"
 

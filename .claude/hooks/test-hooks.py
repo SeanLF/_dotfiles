@@ -27,12 +27,7 @@ CASES = [
     (S, "rg -tr -n pattern", "allow", "rg --type r is valid"),
     (S, "rg -n foo $(fd -tr .)", "allow", "fd cluster in substitution"),
     (S, "rg -rn foo", "deny", "real replace bundle"),
-    (S, "find . -name x; rg -rn foo", "deny", "warn must not preempt deny"),
-    (S, "grep -n foo f.txt", "WARN", "shadowed grep warns"),
-    (S, "rtk init -g --codex", "deny", "rtk clobber guarded"),
-    (S, "rtk init -g --gemini", "deny", "rtk clobber guarded"),
-    (S, "rtk init", "allow", "project-local rtk init fine"),
-    (S, "rtk gain", "allow", "other rtk subcommands fine"),
+    (S, "grep -n foo f.txt", "allow", "grep untouched"),
     (S, 'cat <<EOF\nnever run rg -rn foo\nEOF', "allow", "heredoc mention not denied"),
     # WARN not deny: bulk/multi-file rewrites are a real use Edit cannot serve.
     (S, "sed -i '' 's/a/b/' f.txt", "WARN", "in-place sed warns"),
@@ -53,7 +48,8 @@ CASES = [
     (S, "perl -e 'print time'", "allow", "perl without -i untouched"),
     (S, "ruby -Ilib -e 'puts 1'", "allow", "-Ilib is not -i"),
     (S, "python3 -c 'print(s.replace(1,2))'", "allow", "read-only python replace untouched"),
-    (S, "rg -rn foo && sed -i '' 's/a/b/' f", "deny", "deny still beats the new warn"),
+    (S, "rg -rn foo && sed -i '' 's/a/b/' f", "deny", "deny beats a later warn"),
+    (S, "sed -i '' 's/a/b/' f; rg -rn foo", "deny", "warn must not preempt deny"),
 ]
 
 fails = 0
@@ -62,34 +58,6 @@ for hook, cmd, want, label in CASES:
     ok = got == want
     fails += not ok
     print(f"{'ok  ' if ok else 'FAIL'} {label:<44} {got:<6} (want {want})")
-
-print()
-print("=== warn tier: two rules in one command must both survive ===")
-
-
-def ctx(cmd):
-    out = subprocess.run(
-        [str(S)],
-        input=json.dumps({"session_id": "tst", "tool_input": {"command": cmd}}),
-        capture_output=True,
-        text=True,
-        check=False,
-    ).stdout.strip()
-    try:
-        return json.loads(out)["hookSpecificOutput"].get("additionalContext", "")
-    except (ValueError, KeyError):
-        return ""
-
-
-# A single-slot warn() would let the later rule silently replace the earlier one.
-for cmd, label in [
-    ("sed -i '' 's/a/b/' f && grep -n x f", "in-place warn survives a later grep warn"),
-    ("grep -n x f && sed -i '' 's/a/b/' f", "grep warn survives a later in-place warn"),
-]:
-    c = ctx(cmd)
-    both = "rewrite in place" in c and "shadowed by Claude Code" in c
-    fails += not both
-    print(f"{'ok  ' if both else 'FAIL'} {label}")
 
 print()
 print("=== steer.sh: Stop with a subagent running is not 'done' ===")

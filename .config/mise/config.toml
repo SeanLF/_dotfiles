@@ -41,7 +41,6 @@ rust = "stable"      # rustup's channel; "latest" installs a versioned duplicate
 "github:imsnif/bandwhich" = "latest"
 "github:Arthur-Ficial/apfel" = "latest"
 # mas stays on Homebrew — `brew bundle dump` uses it to enumerate App Store apps
-"github:rtk-ai/rtk" = "latest"
 "github:AlexsJones/llmfit" = "latest"
 "github:spinel-coop/rv" = "latest"
 go = "latest"

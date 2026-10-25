@@ -1,7 +1,6 @@
 #!/bin/bash
 # Guards bash-tool search commands: denies `rg -r*` clusters (--replace
-# masquerading as --recursive) and rtk clobbers of dotfiles symlinks, warns on
-# shadowed grep/find and in-place sed/perl/ruby -i.
+# masquerading as --recursive) and warns on in-place sed/perl/ruby -i.
 # Fails OPEN: contrast pre-commit-review.sh, which fails closed by design.
 set -o pipefail
 # shellcheck source=/dev/null
@@ -21,16 +20,9 @@ deny() {
 }
 
 # Records the warning without exiting, so a later `rg` segment is still
-# tested. Appends and dedupes: assignment would drop an earlier warning when a
-# second rule matches, and one rule can match several segments.
+# tested.
 WARNING=""
-warn() {
-  case "$WARNING" in
-    *"$1"*) return 0 ;;
-  esac
-  WARNING="${WARNING:+$WARNING
-}$1"
-}
+warn() { WARNING=$1; }
 
 emit_warning() {
   [ -z "$WARNING" ] && return 0
@@ -63,11 +55,6 @@ while IFS= read -r seg; do
       ;;
   esac
 
-  case "$seg" in
-    grep\ * | find\ *)
-      warn "Note: bash-tool grep/find are shadowed by Claude Code (grep -> 'ugrep -G --ignore-files', find -> bfs). BRE makes + ? | { } literal, and gitignored/hidden files are skipped, so no-match does not mean absent. Prefer rg/fd; use 'rg -uu' before mutating anything, or 'command grep'/'ggrep' for real GNU behaviour."
-      ;;
-  esac
   # Every cluster holding an `i` is examined, not just the first: `perl -Ilib
   # -pi -e` has a decoy cluster before the real one. Allows a path or `g`
   # prefix too, or `gsed`/`/usr/bin/sed` would be missed.
@@ -98,18 +85,6 @@ while IFS= read -r seg; do
       warn "Note: sed/perl/ruby -i rewrite in place and exit 0 even when the pattern matched nothing, so an edit that never applied looks identical to one that did. Prefer the Edit tool, which errors on no match. If you need the in-place form (bulk or multi-file), verify it landed -- re-read or diff the file -- rather than assuming."
     fi
   fi
-
-  # `rtk init -g --codex`/`--gemini` writes through the ~/.codex/AGENTS.md and
-  # ~/.gemini/GEMINI.md symlinks into this repo, destroying the managed file
-  # silently (rtk-ai/rtk#834).
-  case "$seg" in
-    rtk\ init\ * | *[[:space:]]rtk\ init\ *)
-      if printf '%s' "$seg" | grep -qE '(^|[[:space:]])(-g|--global)([[:space:]]|$)' &&
-        printf '%s' "$seg" | grep -qE '(--codex|--gemini)'; then
-        deny "rtk init -g with --codex or --gemini overwrites ~/.codex/AGENTS.md and ~/.gemini/GEMINI.md, which are symlinks into _dotfiles. It writes through the link and destroys the managed file (rtk-ai/rtk#834). Use a project-local 'rtk init' instead."
-      fi
-      ;;
-  esac
 
 done <<<"$SEGMENTS"
 

@@ -10,6 +10,9 @@ brew "bash"
 brew "btop"
 # Tool for emulating mouse and keyboard events
 brew "cliclick"
+# GNU File, Shell, and Text utilities
+# Only for gtimeout (bin/timeout); keep its gnubin off PATH so ls and co. stay BSD
+brew "coreutils"
 # Get a file from an HTTP, HTTPS or FTP server
 brew "curl"
 # Debugger for the Go programming language
@@ -66,6 +69,8 @@ brew "mise"
 brew "mole"
 # Ping Tool in Rust with Real-Time Data and Visualizations
 brew "nbping"
+# Port scanning utility for large networks
+brew "nmap"
 # Very fast SIMD-first image comparison library (with nodejs API)
 brew "odiff"
 # OpenBSD freely-licensed SSH connectivity tools

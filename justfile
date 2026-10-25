@@ -41,7 +41,7 @@ fmt:
     git ls-files -z -- {{shell_pathspec}}   | xargs -0 mise x -- shfmt -w -i 2 -ci
     mise x -- ruff check --fix bin/nextdns-configure bin/cache-meter bin/codex-config
     git ls-files -z -- '*.toml'             | xargs -0 mise x -- taplo fmt
-    git ls-files -z -- '*.md' '*.json' '*.yml' '*.yaml' | xargs -0 mise x -- prettier --write
+    git ls-files -z -- '*.md' '*.json' '*.yml' '*.yaml' | while IFS= read -r -d '' f; do [ -L "$f" ] || printf '%s\0' "$f"; done | xargs -0 mise x -- prettier --write
 
 # Install dev tools (mise) and activate git hooks (lefthook). Run once after cloning.
 deps:
