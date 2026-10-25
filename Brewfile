@@ -11,7 +11,7 @@ brew "btop"
 # Tool for emulating mouse and keyboard events
 brew "cliclick"
 # GNU File, Shell, and Text utilities
-# Only for gtimeout (bin/timeout); keep its gnubin off PATH so ls and co. stay BSD
+# For timeout, which it links unprefixed; keep its gnubin off PATH so ls and co. stay BSD
 brew "coreutils"
 # Get a file from an HTTP, HTTPS or FTP server
 brew "curl"
