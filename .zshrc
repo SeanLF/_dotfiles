@@ -26,6 +26,8 @@ export EDITOR='nano'
 export PLAYWRIGHT_MCP_CONFIG="$HOME/.playwright/cli.config.json"
 export DEV_DIR="$HOME/Developer"
 export LESS="--mouse $LESS"
+# Keep the `=`: BUN_OPTIONS reaches every bun, and `--preload <path>` breaks `bun install`.
+export BUN_OPTIONS="${BUN_OPTIONS:+$BUN_OPTIONS }--preload=$HOME/.claude/hooks/no-agent-summary.js"
 # Override ancient macOS system tools with current GNU/Homebrew versions
 _hp="${HOMEBREW_PREFIX:-/opt/homebrew}"
 export PATH="$_hp/opt/curl/bin:$_hp/opt/grep/libexec/gnubin:$_hp/opt/findutils/libexec/gnubin:$_hp/opt/gnu-sed/libexec/gnubin:$_hp/opt/make/libexec/gnubin:$HOME/.local/bin:$PATH"
