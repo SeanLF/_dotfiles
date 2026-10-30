@@ -114,7 +114,7 @@ check "ending a turn on a clean HEAD is allowed" "$(run_event Stop "" "$turn_end
 )
 check "post-commit marked the Codex commit pending" \
   "$([ -f "$SANDBOX/repo/.git/claude-pending-review" ] && echo yes || echo no)" yes
-check "ending the turn while HEAD is pending is blocked" "$(run_event Stop "" "$turn_end")" block
+check "ending the turn while HEAD is pending is allowed; pre-push is the gate" "$(run_event Stop "" "$turn_end")" allow
 check "edits are never gated mid-task" "$(run_event PreToolUse apply_patch "$(payload apply_patch x)")" allow
 
 # Codex's SubagentStop for the reviewer role clears it, through the manifest.
