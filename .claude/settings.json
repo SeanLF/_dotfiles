@@ -45,10 +45,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/Developer/_dotfiles/bin/review-gate --stop"
-          },
-          {
-            "type": "command",
             "command": "~/.claude/hooks/steer.sh done"
           }
         ]

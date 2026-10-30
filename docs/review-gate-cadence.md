@@ -1,18 +1,18 @@
-# Review gate: review what a turn committed, before the turn ends
+# Review gate: review agent commits before they are pushed
 
-Date: 2026-09-23. Stale by default; earlier designs and their measurements are in
+Date: 2026-09-23; Stop hook removed 2026-10-29. Stale by default; earlier designs and their measurements are in
 this file's git history.
 
 ## Decision
 
-Nobody else reviews this work, so every agent commit gets an automatic review,
-at the end of the turn, never mid-task. One record: stamps in
+Nobody else reviews this work, so every agent commit is reviewed before it is
+pushed, never mid-task. One record: stamps in
 `claude-reviewed-commits`.
 
 - **post-commit** marks an agent commit pending (`CLAUDECODE=1` or
   `CODEX_THREAD_ID`). Cherry-picks and rebases are not marked.
-- **Stop hook** (`review-gate --stop`) blocks ending the turn while HEAD is
-  pending: once per commit, and never twice in a row (`stop_hook_active`).
+- **No Stop hook.** `review-gate --stop` still exists but is wired nowhere
+  (Claude Code or Codex): the push is the one checkpoint.
 - **SubagentStop** (`record-review`) stamps every unpushed commit when a reviewer
   agent finishes, and clears pending.
 - **pre-push** refuses a push containing an unstamped commit.

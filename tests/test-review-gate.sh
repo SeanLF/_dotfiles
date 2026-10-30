@@ -343,8 +343,8 @@ check "record-review is wired to SubagentStop" \
   "$(jq -r '[.hooks.SubagentStop[]?.hooks[]?.command] | map(select(test("record-review"))) | length' "$SETTINGS")" 1
 check "record-review is NOT wired to PostToolUse" \
   "$(jq -r '[.hooks.PostToolUse[]?.hooks[]?.command] | map(select(test("record-review"))) | length' "$SETTINGS")" 0
-check "review-gate --stop is wired to Stop" \
-  "$(jq -r '[.hooks.Stop[]?.hooks[]?.command] | map(select(test("review-gate --stop"))) | length' "$SETTINGS")" 1
+check "review-gate --stop is NOT wired to Stop" \
+  "$(jq -r '[.hooks.Stop[]?.hooks[]?.command] | map(select(test("review-gate --stop"))) | length' "$SETTINGS" "$ROOT/.codex/hooks.json" | paste -sd+ - | bc)" 0
 check "nothing gates edits mid-task" \
   "$(jq -r '[.hooks.PreToolUse[]?.hooks[]?.command] | map(select(test("pending-review-guard"))) | length' "$SETTINGS")" 0
 check "git push --no-verify is denied in both flag positions" \
