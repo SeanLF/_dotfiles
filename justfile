@@ -30,7 +30,6 @@ test:
     bash tests/test-review-gate.sh
     bash tests/test-codex-hooks.sh
     bash tests/test-codex-config.sh
-    bash tests/test-raycast-dns.sh
     python3 .claude/hooks/test-hooks.py
     uv run --group dev pytest -q
 

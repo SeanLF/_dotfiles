@@ -14,7 +14,7 @@ setup_dns() {
     $DRY_RUN || "$ts" set --accept-dns=true
   fi
 
-  # Passwordless cache flush for raycast-scripts/{toggle,fix}-dns.sh.
+  # Passwordless cache flush for raycast-scripts/flush-dns.sh.
   local sudoers="/etc/sudoers.d/raycast-dns"
   local sudoers_line="$USER ALL=(ALL) NOPASSWD: /usr/bin/dscacheutil -flushcache, /usr/bin/killall -HUP mDNSResponder"
 
