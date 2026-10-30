@@ -1,5 +1,7 @@
 tap "seanlf/tap", "https://github.com/SeanLF/homebrew-tap"
 tap "tbvdm/tap"
+# Run your GitHub Actions locally
+brew "act"
 # Static checker for GitHub Actions workflow files
 brew "actionlint"
 # Library for command-line editing
@@ -11,7 +13,6 @@ brew "btop"
 # Tool for emulating mouse and keyboard events
 brew "cliclick"
 # GNU File, Shell, and Text utilities
-# For timeout, which it links unprefixed; keep its gnubin off PATH so ls and co. stay BSD
 brew "coreutils"
 # Get a file from an HTTP, HTTPS or FTP server
 brew "curl"
@@ -71,6 +72,8 @@ brew "mole"
 brew "nbping"
 # Port scanning utility for large networks
 brew "nmap"
+# OpenAPI Diff and Breaking Changes
+brew "oasdiff"
 # Very fast SIMD-first image comparison library (with nodejs API)
 brew "odiff"
 # OpenBSD freely-licensed SSH connectivity tools
@@ -116,8 +119,6 @@ brew "tbvdm/tap/sigtop", args: ["HEAD"], trusted: true
 cask "1password"
 # Command-line interface for 1Password
 cask "1password-cli"
-# 3D creation suite
-cask "blender"
 # Get the most out of a fixed Claude subscription pool
 cask "seanlf/tap/ccpool", trusted: true
 # OpenAI's official ChatGPT desktop app
@@ -136,10 +137,6 @@ cask "google-chrome"
 cask "handy"
 # Free and open-source media player
 cask "iina"
-# Official Jagex Launcher
-cask "jagex"
-# Menu bar app for running local LLMs
-cask "llama-app"
 # Reverse proxy, secure introspectable tunnels to localhost
 cask "ngrok"
 # Cloud gaming platform
@@ -152,12 +149,8 @@ cask "protonvpn"
 cask "rectangle"
 # Instant messaging application focusing on security
 cask "signal"
-# Open-source media center
-cask "stremio@beta"
 # Mesh VPN based on WireGuard
 cask "tailscale-app"
-# AI image upscaler
-cask "upscayl"
 # Multiplayer code editor
 cask "zed"
 mas "1Password for Safari", id: 1569813296
