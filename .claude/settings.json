@@ -93,6 +93,15 @@
             "command": "~/.claude/hooks/search-tool-guard.sh"
           }
         ]
+      },
+      {
+        "matcher": "Bash|WebFetch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/email-guard.sh"
+          }
+        ]
       }
     ]
   },

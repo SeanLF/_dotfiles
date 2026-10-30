@@ -1,15 +1,18 @@
 import json
+import os
 import pathlib
 import subprocess
 
 H = pathlib.Path.home() / ".claude/hooks"
 S = H / "search-tool-guard.sh"
+E = H / "email-guard.sh"
 
 
 def run(hook, cmd, sid="tst"):
-    payload = json.dumps({"session_id": sid, "tool_input": {"command": cmd}})
+    tool, inp = ("WebFetch", {"url": cmd[4:]}) if cmd.startswith("URL ") else ("Bash", {"command": cmd})
+    payload = json.dumps({"session_id": sid, "tool_name": tool, "tool_input": inp})
     out = subprocess.run(
-        [str(hook)], input=payload, capture_output=True, text=True, check=False
+        [str(hook)], input=payload, env={**os.environ, "EMAIL_GUARD_DOMAIN": "example.com"}, capture_output=True, text=True, check=False
     ).stdout.strip()
     if not out:
         return "allow"
@@ -17,8 +20,8 @@ def run(hook, cmd, sid="tst"):
         h = json.loads(out)["hookSpecificOutput"]
     except (ValueError, KeyError):
         return "BADJSON"
-    if h.get("permissionDecision") == "deny":
-        return "deny"
+    if h.get("permissionDecision") in ("deny", "ask"):
+        return h["permissionDecision"]
     return "WARN" if h.get("additionalContext") else "allow"
 
 
@@ -50,6 +53,18 @@ CASES = [
     (S, "python3 -c 'print(s.replace(1,2))'", "allow", "read-only python replace untouched"),
     (S, "rg -rn foo && sed -i '' 's/a/b/' f", "deny", "deny beats a later warn"),
     (S, "sed -i '' 's/a/b/' f; rg -rn foo", "deny", "warn must not preempt deny"),
+    (E, "curl -s 'https://packages.ecosyste.ms/api/v1/x?mailto=someone@example.com'", "ask", "ecosyste.ms mailto"),
+    (E, 'UA="A Person someone@example.com"\necho x; curl -s -A "$UA" https://efts.sec.gov', "ask", "UA set in one segment, sent later"),
+    (E, "python3 -c 'urllib.request.Request(u, headers={\"User-Agent\": \"x (someone@example.com)\"})'", "ask", "python urllib UA"),
+    (E, "curl -s https://jobs.example/apply -F email=railway+someone@example.com", "ask", "plus-addressed variant"),
+    (E, "URL https://api.example/x?mailto=someone@example.com", "ask", "WebFetch url"),
+    (E, "curl -s -A 'steer/1.0 (bots@example.com)' https://commons.wikimedia.org", "allow", "bot address passes"),
+    (E, "curl -s -A 'steer/1.0 (BOTS@example.com)' https://commons.wikimedia.org", "allow", "bot address any case"),
+    (E, 'git -c user.email="someone@example.com" commit -m "see https://example.com"', "allow", "git author is not a send"),
+    (E, 'git -c user.email="someone@example.com" commit -m x && curl -s https://x.dev', "allow", "address only in git segment"),
+    (E, "git commit -m x && curl -s 'https://x.dev/?m=someone@example.com'", "ask", "git exemption is per segment"),
+    (E, "rg -n someone@example.com ~/.claude/projects", "allow", "local search is not a send"),
+    (E, "curl -s https://example.com", "allow", "no address"),
 ]
 
 fails = 0
@@ -61,7 +76,6 @@ for hook, cmd, want, label in CASES:
 
 print()
 print("=== steer.sh: Stop with a subagent running is not 'done' ===")
-import os
 import tempfile
 
 STEER = pathlib.Path(__file__).parent / "steer.sh"
