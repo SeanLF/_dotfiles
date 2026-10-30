@@ -1,0 +1,25 @@
+[project]
+name = "seanfloyd-dotfiles"
+version = "0.1.0"
+description = "Commands behind this Mac's upkeep: maintenance, advisory-scan, rex-job"
+requires-python = ">=3.14"
+dependencies = ["rich>=14"]
+
+[project.scripts]
+maintenance = "dotfiles.maintenance:main"
+advisory-scan = "dotfiles.advisories:main"
+rex-job = "dotfiles.job:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+# "dotfiles" on PyPI is someone else's package; the module keeps the short name.
+[tool.uv.build-backend]
+module-name = "dotfiles"
+
+[build-system]
+requires = ["uv_build>=0.13.6,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests/py"]

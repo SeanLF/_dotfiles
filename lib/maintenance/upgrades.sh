@@ -1,107 +1,108 @@
 #!/bin/bash
-# System maintenance — run periodically to keep packages updated.
-# Pass --check to preview what *would* be upgraded without changing anything.
+# The upgrades maintenance runs, one function per step; this file decides
+# how to upgrade, maintenance decides when and in what order.
+#   upgrades.sh [--check] step_name...      --check previews, changes nothing
 set -e
 
 CHECK_ONLY=false
-for arg in "$@"; do
-  case "$arg" in
-    --check | -n) CHECK_ONLY=true ;;
-    -h | --help)
-      echo "Usage: $0 [--check]"
-      exit 0
-      ;;
-    *)
-      echo "unknown argument: $arg" >&2
-      echo "Usage: $0 [--check]" >&2
-      exit 2
-      ;;
-  esac
-done
-
-# mise's shell hooks don't fire non-interactively; `mise env` emits the PATH
-# exports directly. `|| true` guards a mise hiccup from aborting under `set -e`.
-if command -v mise &>/dev/null; then
-  eval "$(mise env -s bash 2>/dev/null)" || true
+if [[ "${1:-}" == --check ]]; then
+  CHECK_ONLY=true
+  shift
 fi
+# shellcheck source=/dev/null
+source "$(dirname "$(readlink -f "$0")")/common.sh"
 
-if [[ -t 1 ]]; then
-  bold='\033[1m' dim='\033[2m'
-  red='\033[31m' green='\033[32m' yellow='\033[33m' blue='\033[34m'
-  reset='\033[0m'
-else
-  bold='' dim='' red='' green='' yellow='' blue='' reset=''
-fi
-
-DOTFILES_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+DOTFILES_DIR="$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)"
 BREWFILE="$DOTFILES_DIR/Brewfile"
 RUBY_GEMS="$DOTFILES_DIR/ruby-global-gems"
-failures=()
 
-step_started=""
-step_done() {
-  [[ -n "$step_started" ]] || return 0
-  info "($((SECONDS - step_started))s)"
-}
-step() {
-  step_done
-  step_started=$SECONDS
-  echo -e "${bold}${blue}==> $1${reset}"
-}
-info() { echo -e "${dim}$1${reset}"; }
-ok() { echo -e "${green}$1${reset}"; }
-warn() {
-  echo -e "${yellow}$1${reset}" >&2
-  failures+=("$1")
+# claude's TUI clears the screen when it sees a terminal, wiping the steps above it.
+no_tty() {
+  "$@" 2>&1 | cat
+  return "${PIPESTATUS[0]}"
 }
 
-try() { "$@" || warn "$* failed"; }
-
-# Only mise/uv/rustup are version-addressable for rollback; brew's list below is reference-only.
-step_snapshot() {
-  step "Version snapshot"
-  if $CHECK_ONLY; then
-    info "(skipped in --check mode — nothing to protect)"
-    return
-  fi
-  local versions_dir="$HOME/.dotfiles-backup/versions" out old
-  out="$versions_dir/$(date +%Y%m%d-%H%M%S)"
-  mkdir -p "$out" || {
-    warn "could not create snapshot dir $out"
-    return
-  }
-  mise ls >"$out/mise.txt" 2>/dev/null || true
-  command -v uv &>/dev/null && uv tool list >"$out/uv-tools.txt" 2>/dev/null || true
-  command -v rustup &>/dev/null && rustup toolchain list >"$out/rustup.txt" 2>/dev/null || true
-  brew list --versions >"$out/brew.txt" 2>/dev/null || true
-  if [[ -s "$out/mise.txt" ]]; then
-    ok "snapshot -> $out"
-  else
-    warn "snapshot: mise.txt is empty — rollback point may be unusable ($out)"
-  fi
-  # Keep the newest 30 rollback points (about a month of daily runs).
-  while IFS= read -r old; do
-    rm -r "$old" || warn "snapshot: could not prune $old"
-  done < <(find "$versions_dir" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -r | tail -n +31)
+# brew's recorded version of a self-updating cask is stale once the app updates
+# itself, so compare the bundle's own version; prints casks whose updater stalled.
+lagging_casks() {
+  local token want app have
+  while IFS=$'\t' read -r token want app; do
+    have=$(defaults read "/Applications/$app/Contents/Info.plist" CFBundleShortVersionString 2>/dev/null) || continue
+    want=${want%%[,-]*} have=${have%%-*}
+    # Skips builds whose version isn't dotted numbers (nightlies, tip builds).
+    [[ $want =~ ^[0-9]+(\.[0-9]+)*$ && $have =~ ^[0-9]+(\.[0-9]+)*$ && $want != "$have" ]] || continue
+    [[ $(printf '%s\n%s\n' "$have" "$want" | sort -V | head -1) == "$have" ]] && echo "$token"
+  done < <(brew info --cask --installed --json=v2 2>/dev/null |
+    jq -r '.casks[] | select(.auto_updates) | [.token, .version, ([.artifacts[] | .app? // empty | .[] | strings][0] // empty)] | select(length == 3) | @tsv')
 }
 
-step_homebrew() {
-  step "Homebrew"
+# token|app bundle|whether the cask runs a .pkg installer (needs sudo). Not
+# tabs: they're IFS whitespace, so an empty app field would collapse away.
+cask_apps() {
+  brew info --cask --installed --json=v2 2>/dev/null |
+    jq -r '.casks[] | [.token, ([.artifacts[] | .app? // empty | .[] | strings][0] // ""), ([.artifacts[] | keys[]] | any(. == "pkg" or . == "installer"))] | map(tostring) | join("|")'
+}
+
+# Brew redoing a self-updating cask reinstalls what the app already moved past.
+export HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS=1
+# Open shells load zsh modules from their own Cellar path on demand; deleting
+# it breaks completion in every long-lived pane until it restarts.
+export HOMEBREW_NO_CLEANUP_FORMULAE=zsh
+# step_brew_update runs once; the formula and cask steps then run side by side.
+export HOMEBREW_NO_AUTO_UPDATE=1
+
+step_brew_update() {
+  step "Homebrew update"
   try brew update
+}
 
-  # Brew redoing a self-updating cask reinstalls what the app already moved past.
-  export HOMEBREW_NO_UPGRADE_AUTO_UPDATES_CASKS=1
+# Formulae first in the mise chain: brew upgrades mise itself.
+step_brew_formulae() {
+  step "Homebrew formulae"
+  if $CHECK_ONLY; then
+    brew outdated --formula || true
+    return 0
+  fi
+  # --no-ask: brew upgrade defaults to prompting when a TTY is attached, which hangs unattended runs.
+  try brew upgrade --formula --no-ask
+}
+
+# Casks to upgrade: brew's outdated list plus self-updating apps whose updater
+# stalled. An app that's open is left for the next run, since brew would quit it.
+step_brew_casks() {
+  step "Homebrew casks"
+  local token app pkg outdated plain=() pkgs=() running=()
+  outdated=" $(brew outdated --cask --quiet 2>/dev/null | tr '\n' ' ') $(lagging_casks | tr '\n' ' ') "
+  while IFS='|' read -r token app pkg; do
+    [[ "$outdated" == *" $token "* ]] || continue
+    if [[ -n "$app" ]] && pgrep -qf "/Applications/$app/Contents/MacOS/"; then
+      running+=("$token")
+    elif [[ "$pkg" == true ]]; then
+      pkgs+=("$token")
+    else
+      plain+=("$token")
+    fi
+  done < <(cask_apps)
 
   if $CHECK_ONLY; then
-    brew outdated || true
-    brew outdated --cask --greedy-auto-updates || true
-  else
-    # --no-ask: brew upgrade defaults to prompting when a TTY is attached, which hangs unattended runs.
-    try brew upgrade --no-ask
-    try brew upgrade --cask --no-ask
-    try brew autoremove
-    try brew cleanup
+    if ((${#plain[@]} + ${#pkgs[@]})); then info "casks to upgrade: ${plain[*]} ${pkgs[*]}"; fi
+    if ((${#running[@]})); then info "open, would skip: ${running[*]}"; fi
+    return 0
   fi
+  if ((${#plain[@]})); then try brew upgrade --cask --greedy --no-ask "${plain[@]}"; fi
+  if ((${#pkgs[@]})); then try brew upgrade --cask --greedy --no-ask "${pkgs[@]}"; fi
+  if ((${#running[@]})); then info "skipped while open: ${running[*]}"; fi
+}
+
+# After every brew step: cleanup could delete what a running upgrade is using.
+step_brew_tidy() {
+  step "Homebrew cleanup"
+  if $CHECK_ONLY; then
+    info "(skipped in --check mode)"
+    return 0
+  fi
+  try brew autoremove
+  try brew cleanup
 }
 
 step_appstore() {
@@ -113,7 +114,7 @@ step_appstore() {
   fi
 }
 
-# Xcode prereleases only (stable is mas's job, above). `--latest-prerelease`
+# Xcode prereleases only; stable Xcode is step_appstore's, so the two run apart. `--latest-prerelease`
 # installs RCs too, so prerelease_re must also match "release candidate" or an
 # installed RC would look like a fresh one is available.
 step_xcodes() {
@@ -126,11 +127,10 @@ step_xcodes() {
   xcodes update >/dev/null 2>&1 || warn "xcodes update failed"
 
   # Anchor on a leading version number to skip blanks and the list's footer line.
-  local list prerelease_re latest_pre latest_stable
+  local list prerelease_re latest_pre
   prerelease_re="beta|release candidate"
   list=$(xcodes list 2>/dev/null)
   latest_pre=$(echo "$list" | grep -iE "^[0-9].*($prerelease_re)" | tail -1)
-  latest_stable=$(echo "$list" | grep -E "^[0-9]" | grep -viE "$prerelease_re" | tail -1)
 
   # Multi-GB download; guard the empty-parse case so a format drift in `xcodes
   # list` can't blank the "already newest" check and trigger a needless re-download.
@@ -140,23 +140,17 @@ step_xcodes() {
     if echo "$latest_pre" | grep -qi "installed"; then
       info "on latest prerelease: $latest_pre"
     elif $CHECK_ONLY; then
-      info "newer prerelease available — would install: $latest_pre"
-    elif [[ -t 0 ]]; then
+      info "newer prerelease available; would install: $latest_pre"
+    elif [[ -z "${MAINT_UNATTENDED:-}" && -t 0 ]]; then
       info "upgrading to latest prerelease: $latest_pre"
+      report_status blocked "Xcode prerelease needs Apple ID 2FA" auth
       try xcodes install --latest-prerelease
+      report_status working
     else
       # xcodes needs interactive Apple ID 2FA; a headless run can't answer it,
       # so report instead of failing on every unattended sweep.
-      info "newer prerelease available (run maintenance interactively — needs Apple ID 2FA): $latest_pre"
+      info "newer prerelease available (run maintenance yourself; it needs Apple ID 2FA): $latest_pre"
     fi
-  fi
-
-  if [[ -z "$latest_stable" ]]; then
-    :
-  elif echo "$latest_stable" | grep -qi "installed"; then
-    info "on latest stable: $latest_stable"
-  else
-    info "latest stable available (install manually): $latest_stable"
   fi
 }
 
@@ -177,7 +171,7 @@ step_claude_code() {
     ok "Claude Code is already up to date ($local_ver)"
   else
     info "Claude Code $local_ver -> $remote_ver"
-    $CHECK_ONLY || try claude update
+    $CHECK_ONLY || try no_tty claude update
   fi
 }
 
@@ -188,13 +182,13 @@ step_claude_plugins() {
     info "claude not found, skipping"
     return
   }
-  try claude plugin marketplace update
+  try no_tty claude plugin marketplace update
   if $CHECK_ONLY; then
     info "(check mode: marketplace refreshed; plugin updates skipped)"
     return
   fi
   command -v jq &>/dev/null || {
-    warn "jq not found — skipping per-plugin updates"
+    warn "jq not found; skipping per-plugin updates"
     return
   }
   # Distinguish "list failed" from "genuinely zero enabled plugins", or a broken
@@ -215,7 +209,7 @@ step_claude_plugins() {
     return
   fi
   while IFS= read -r id; do
-    [[ -n "$id" ]] && try claude plugin update "$id"
+    [[ -n "$id" ]] && try no_tty claude plugin update "$id"
   done <<<"$ids"
 }
 
@@ -247,33 +241,14 @@ step_mise() {
   try mise prune --yes
 }
 
-# `mise prune` only removes orphaned versions tracked via configs; a tool
-# installed with no config source lingers silently. `mise ls` renders the
-# source config as the 3rd column, so a row with fewer than 3 columns is an
-# undeclared install, cross-checked below against every config mise has seen
-# (its state dir), not just the ones active in this cwd.
-step_mise_drift() {
-  step "mise drift"
-  local tracked drift="" name ver
-  tracked=$(cat "$HOME/.local/state/mise/tracked-configs"/* 2>/dev/null) || true
-  while read -r name ver _; do
-    [[ -n "$name" ]] || continue
-    grep -qF "$name" <<<"$tracked" || drift+="  - $name $ver"$'\n'
-  done < <(mise ls 2>/dev/null | awk 'NF>0 && NF<3')
-  if [[ -z "$drift" ]]; then
-    ok "all mise installs declared"
-  else
-    warn "untracked mise installs (declare in config or uninstall):"
-    printf '%s' "$drift" >&2
-  fi
-}
-
 step_uv() {
   step "uv tools"
   if $CHECK_ONLY; then
     uv tool list --outdated 2>/dev/null || uv tool list || true
   else
-    try uv tool upgrade --all
+    # Release cooldown: poisoned uploads are usually yanked within days. uv
+    # records the span in each tool's receipt, so it sticks to later upgrades.
+    UV_EXCLUDE_NEWER="3 days" try uv tool upgrade --all
   fi
 }
 
@@ -330,7 +305,7 @@ step_gems() {
 
 # mise's `rust` plugin delegates to rustup for the stable toolchain, but rustup
 # itself, other toolchains, and stale components only refresh via `rustup
-# self update` / `rustup update` — not covered by step_mise above.
+# self update` / `rustup update`, which step_mise doesn't cover.
 step_rustup() {
   step "rustup"
   command -v rustup &>/dev/null || {
@@ -356,43 +331,32 @@ step_brewfile() {
     info "(skipped in --check mode)"
   elif [[ -f "$BREWFILE" ]]; then
     try brew bundle dump --file="$BREWFILE" --force
+    # This repo's own package, installed from the checkout by setup.sh tools; in
+    # the Brewfile, brew bundle would try to install it from PyPI.
+    grep -vx 'uv "seanfloyd-dotfiles"' "$BREWFILE" >"$BREWFILE.tmp" && mv "$BREWFILE.tmp" "$BREWFILE"
     ok "Brewfile updated"
   else
     warn "Brewfile not found at $BREWFILE"
   fi
 }
 
+# macOS installs its own updates (automatic install is on) and restarting is
+# the user's call; this installs what needs no restart, like Command Line Tools.
 step_macos() {
   step "macOS updates"
-  softwareupdate --list 2>&1 | grep -vE "^Software Update Tool|^Finding available software|^$" || true
+  local list label labels=()
+  list=$(softwareupdate --list 2>&1)
+  grep -E '^\* Label|Title:' <<<"$list" || info "no updates"
+  while IFS= read -r label; do labels+=("$label"); done < <(awk '
+    /^\* Label: / { if (l != "" && !r) print l; l = substr($0, 10); r = 0; next }
+    /Action: restart/ { r = 1 }
+    END { if (l != "" && !r) print l }' <<<"$list")
+  ((${#labels[@]})) || return 0
+  if $CHECK_ONLY; then
+    info "would install: ${labels[*]}"
+    return 0
+  fi
+  try sudo softwareupdate --install "${labels[@]}"
 }
 
-if ! online -q 5; then
-  echo -e "${red}No network connectivity — skipping maintenance${reset}"
-  exit 1
-fi
-
-step_snapshot
-step_homebrew
-step_appstore
-step_xcodes
-step_claude_code
-step_claude_plugins
-step_mise
-step_mise_drift
-step_gems
-step_rustup
-step_uv
-step_tldr
-step_brewfile
-step_macos
-step_done
-
-echo ""
-if [[ ${#failures[@]} -gt 0 ]]; then
-  echo -e "${red}Finished with ${#failures[@]} warning(s):${reset}"
-  for f in "${failures[@]}"; do echo -e "  ${yellow}- $f${reset}"; done
-  exit 1
-else
-  ok "Done -- all clear!"
-fi
+run_listed "$@"

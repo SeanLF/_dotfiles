@@ -21,4 +21,3 @@ if [ -f lefthook.yml ]; then
     lefthook run --no-auto-install pre-merge-commit "$@"
   fi
 fi
-

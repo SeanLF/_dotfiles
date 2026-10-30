@@ -191,13 +191,17 @@ check "dry-run reaches the end despite the drift" "$(printf '%s\n' "$out" | grep
 check "dry-run left the live file alone" "$(cat "$T/codex/config.toml")" 'model = "stale"'
 
 # Control: the same module with --check as a bare assignment aborts under set -e on drift, silently.
+# A copy of the repo whose setup/ is real files, so the module can be edited.
+mkdir -p "$T/bare"
+for f in "$ROOT"/* "$ROOT"/.codex; do ln -s "$f" "$T/bare/"; done
+rm "$T/bare/setup"
+cp -R "$ROOT/setup" "$T/bare/setup"
 # shellcheck disable=SC2016
-sed -e 's|^DOTFILES_DIR=.*|DOTFILES_DIR="'"$ROOT"'"|' \
-  -e 's|if out=\$("\$tool" --check 2>&1); then rc=0; else rc=\$?; fi|out=$("$tool" --check 2>\&1); rc=$?|' \
-  "$ROOT/setup.sh" >"$T/setup-bare.sh"
+sed -i '' -e 's|if out=\$("\$tool" --check 2>&1); then rc=0; else rc=\$?; fi|out=$("$tool" --check 2>\&1); rc=$?|' \
+  "$T/bare/setup/modules/codex.sh"
 check "control: the bare-assignment form differs from the shipped one" \
-  "$(cmp -s "$T/setup-bare.sh" "$ROOT/setup.sh" && echo same || echo differs)" differs
-out=$(HOME="$H" CODEX_HOME="$T/codex" bash "$T/setup-bare.sh" --dry-run codex 2>&1)
+  "$(cmp -s "$T/bare/setup/modules/codex.sh" "$ROOT/setup/modules/codex.sh" && echo same || echo differs)" differs
+out=$(HOME="$H" CODEX_HOME="$T/codex" bash "$T/bare/setup.sh" --dry-run codex 2>&1)
 check "control: the bare-assignment form never reaches the end" "$(printf '%s\n' "$out" | grep -c '^Done!$')" 0
 
 out=$(setup setup.sh codex)

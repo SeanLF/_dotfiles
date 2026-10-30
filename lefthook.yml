@@ -1,31 +1,18 @@
 pre-commit:
   commands:
+    # By content type, so a script in bin/ is linted for what it is, whatever its name.
     shellcheck:
-      glob:
-        - "*.{sh,bash}"
-        - "bin/*"
-        - "setup.sh"
-      exclude:
-        - "bin/nextdns-configure" # python
-        - "bin/cache-meter" # python
-        - "bin/codex-config" # python
+      file_types: [text/x-shellscript, text/x-sh]
       run: mise x -- shellcheck {staged_files}
     shfmt:
-      glob:
-        - "*.{sh,bash}"
-        - "bin/*"
-        - "setup.sh"
-      exclude:
-        - "bin/nextdns-configure" # python
-        - "bin/cache-meter" # python
-        - "bin/codex-config" # python
+      file_types: [text/x-shellscript, text/x-sh]
       run: mise x -- shfmt -d -i 2 -ci {staged_files}
     ruff:
-      glob:
-        - "*.py"
-        - "bin/nextdns-configure"
-        - "bin/cache-meter"
-        - "bin/codex-config"
+      glob: "*.py"
+      run: mise x -- ruff check {staged_files}
+    # Extensionless Python scripts in bin/, found by their shebang.
+    ruff-scripts:
+      file_types: text/x-python
       run: mise x -- ruff check {staged_files}
     taplo:
       glob: "*.toml"

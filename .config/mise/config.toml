@@ -46,7 +46,13 @@ rust = "stable"      # rustup's channel; "latest" installs a versioned duplicate
 go = "latest"
 "npm:@google/gemini-cli" = "latest"
 bun = "latest"
+"aqua:sqlc-dev/sqlc" = "latest"
+"github:thushan/olla" = "latest"
+"github:getsentry/cli" = "latest"
+"cargo:cargo-cyclonedx" = "latest"
+"aqua:anchore/grype" = "latest"
 
 [settings]
 idiomatic_version_file_enable_tools = ["ruby"]
 experimental = true
+minimum_release_age = "3d"

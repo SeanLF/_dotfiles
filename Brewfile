@@ -24,6 +24,8 @@ brew "diffutils"
 brew "eza"
 # Play, record, convert, and stream select audio and video codecs
 brew "ffmpeg"
+# Utility to determine file types
+brew "file-formula"
 # Collection of GNU find, xargs, and locate
 brew "findutils"
 # Command-line fuzzy finder written in Go
@@ -52,6 +54,8 @@ brew "imessage-exporter"
 brew "iperf3"
 # Pager program similar to more
 brew "less"
+# Multi-format archive and compression library
+brew "libarchive"
 # YAML Parser
 brew "libyaml"
 # LLM inference in C/C++
@@ -68,6 +72,8 @@ brew "mercury-cli"
 brew "mise"
 # Deep clean and optimize your Mac
 brew "mole"
+# Free (GNU) replacement for the Pico text editor
+brew "nano"
 # Ping Tool in Rust with Real-Time Data and Visualizations
 brew "nbping"
 # Port scanning utility for large networks
@@ -90,6 +96,8 @@ brew "poppler"
 brew "potrace"
 # Fast command-line bittorrent client and server
 brew "rqbit"
+# Utility that provides fast incremental file transfer
+brew "rsync"
 # Compressed read-only file system for Linux
 brew "squashfs"
 # CLI for generating a Software Bill of Materials from container images
@@ -110,6 +118,8 @@ brew "vim"
 brew "xcodegen"
 # Command-line tool to install and switch between multiple versions of Xcode
 brew "xcodes"
+# UNIX shell (command interpreter)
+brew "zsh"
 # Fish-like fast/unobtrusive autosuggestions for zsh
 brew "zsh-autosuggestions"
 # Fish shell like syntax highlighting for zsh

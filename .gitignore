@@ -7,3 +7,7 @@ scratch/
 .antigravitycli/
 .claude/settings.local.json
 .claude/skills/synced/
+
+# Python package (uv)
+.venv/
+__pycache__/
