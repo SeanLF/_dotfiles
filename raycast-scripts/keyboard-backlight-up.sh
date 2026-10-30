@@ -9,6 +9,6 @@
 # @raycast.icon 🔆
 # @raycast.packageName System
 
-# Native hotkey dispatch (Shortcuts/Services) is broken on macOS 27 beta, so
-# this rides Raycast's event tap instead.
+# Raycast, not a Shortcuts hotkey: those work again in macOS 27.2 but take
+# a noticeable beat to fire, which is wrong for a key you tap repeatedly.
 exec "$HOME/.local/bin/kbbl" up 1
